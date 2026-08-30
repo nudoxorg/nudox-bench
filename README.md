@@ -57,10 +57,12 @@ cargo run --bin nbench -- run --config configs/default.toml
 cargo run --bin nbench -- run --config configs/ablations.toml
 ```
 
-[docs/RUNNING.md](docs/RUNNING.md) has the full walkthrough, including the two
-non-obvious build traps (the toolchain is resolved from your *working
-directory*, and Backend's workspace — not `nudox-engine` — is what fails to
-resolve inside nix).
+**[docs/SETUP.md](docs/SETUP.md) is the end-to-end checklist** — prerequisites,
+the three tiers of setup, every environment variable, and a troubleshooting
+table. [docs/RUNNING.md](docs/RUNNING.md) explains *why* each step is shaped
+the way it is, including the two non-obvious build traps (the toolchain is
+resolved from your *working directory*, and Backend's workspace — not
+`nudox-engine` — is what fails to resolve inside nix).
 
 ---
 
@@ -137,11 +139,33 @@ that cannot fail, which is the most common way to write a worthless one.
 
 See [docs/SCENARIOS.md](docs/SCENARIOS.md).
 
+## Results
+
+The first full run — all five Nudox policies against both baselines — is in
+[`results/2026-08-30/`](results/2026-08-30), with `report.md` and `report.json`
+beside the charts. [`protocol.html`](results/2026-08-30/protocol.html) is the
+written result: what came back, how every number was recorded and scored, and
+which claims the method supports.
+
+The headline, stated carefully: on the five scenarios both systems attempted,
+Nudox answered in **785 tokens per question against ripgrep's 9,853**, with a
+resolution gap of zero — and passed 3 of 5 to ripgrep's 4 (on the four Rust
+scenarios alone, both pass 3 of 4). *Same answers, a fraction of the context*
+is supported by that run. *More correct answers* is not.
+
 ## Status
 
 * **Baselines** — working, producing the numbers above.
-* **`endpoint/`** — builds and starts a real MCP endpoint over a real indexed
-  package, outside nix, without `clang`.
-* **The Nudox adapter** — written, compiles, wired end to end; the full
-  comparison run is the next thing to do once an endpoint has finished
-  indexing.
+* **`endpoint/`** — builds and starts a real MCP endpoint over real indexed
+  packages, outside nix, without `clang`. It now also installs the semantic
+  embedder from `NUDOX_EMBED_MODEL_DIR`, which it previously could not: the
+  engine takes an embedder from its host, and this one never supplied one, so
+  every published Nudox number so far is **structural-only ranking**.
+* **The Nudox adapter** — wired end to end, with five client-side ablations,
+  and exercised by the 2026-08-30 run.
+* **Not yet measured** — semantic search (see above), Go and Python (the
+  producers need an oracle and a source checkout, [SETUP.md §3](docs/SETUP.md)),
+  the implementation scenarios (no judge key that run), and any third-party MCP
+  server: `AdapterConfig::McpStdio` is declared in config but the harness still
+  refuses it as not wired. **There is no measured comparison against Context7,
+  Deepcon, Exa or NIA** — the only baselines are ripgrep and rust-analyzer.
