@@ -162,6 +162,24 @@ impl Hit {
             AddressMode::Key => self.key.as_deref().or(self.address.as_deref()),
         }
     }
+
+    /// Whether the requested spelling was actually available.
+    ///
+    /// The `keys` ablation exists to price the 64-hex key against the
+    /// readable address. It can only do that if the response hands back a
+    /// key — and in practice `search` renders an *address* per hit and the
+    /// hash never crosses the wire at all. When that happens the ablation
+    /// silently falls back to the address and reports a row identical to
+    /// `nudox-full`, which reads as "the address scheme saves nothing"
+    /// when what actually happened is "the counterfactual was never run".
+    ///
+    /// So it is reported rather than papered over.
+    fn honoured(&self, mode: AddressMode) -> bool {
+        match mode {
+            AddressMode::Address => self.address.is_some(),
+            AddressMode::Key => self.key.is_some(),
+        }
+    }
 }
 
 /// Nudox, reached over its loopback streamable-HTTP endpoint.
@@ -175,6 +193,11 @@ pub struct NudoxAdapter {
     ensure_indexed: bool,
     /// Deadline handed to `index`, which covers the whole batch.
     index_wait_seconds: u32,
+    /// Lineages the corpus actually holds, read once at preflight.
+    ///
+    /// `None` means the check could not be made and every scenario is
+    /// attempted — never silently skipped.
+    loaded: Option<Vec<String>>,
 }
 
 impl NudoxAdapter {
@@ -206,12 +229,54 @@ impl NudoxAdapter {
             keep_responses,
             ensure_indexed,
             index_wait_seconds: 600,
+            loaded: None,
         })
     }
 
     /// The `search` call every task starts from.
+    ///
+    /// # Why `overview` does not use the prose query
+    ///
+    /// `search` matches by *name and kind* — its own description says so, and
+    /// says it is "not full-text over documentation". Semantic ranking covers
+    /// the rest, but only when an embedder is configured; without one, a prose
+    /// query like "memchr public exports" matches no symbol name and returns
+    /// zero rows. Measured: it did exactly that, scoring 13% on a scenario
+    /// ripgrep passed.
+    ///
+    /// That was the harness using the tool wrong, not the tool failing. An
+    /// agent enumerating a package's surface searches the package *name* —
+    /// which prefix-matches the family of symbols named after it — and asks
+    /// for a large page. So `overview` does that, and the prose stays in the
+    /// scenario for the judge and for adapters that do read prose.
     fn search_args(&self, scenario: &Scenario) -> Value {
-        let query = scenario
+        let query = if scenario.task == TaskKind::Overview {
+            scenario
+                .probe
+                .name
+                .clone()
+                .unwrap_or_else(|| scenario.target.package.clone())
+        } else {
+            self.free_text_query(scenario)
+        };
+        let mut args = json!({
+            "query": query,
+            "packages": [scenario.target.lineage()],
+        });
+        // Enumerating a surface needs a page big enough to hold it; the
+        // default is 50 and the cap is 500.
+        if scenario.task == TaskKind::Overview {
+            args["limit"] = json!(200);
+        }
+        if let Some(limit) = self.policy.search_limit {
+            args["limit"] = json!(limit);
+        }
+        args
+    }
+
+    /// The query for every task that is looking for one named thing.
+    fn free_text_query(&self, scenario: &Scenario) -> String {
+        scenario
             .probe
             .query
             .clone()
@@ -223,16 +288,7 @@ impl NudoxAdapter {
                     .as_ref()
                     .and_then(|s| s.rsplit("::").next().map(str::to_owned))
             })
-            .unwrap_or_else(|| scenario.question.clone());
-
-        let mut args = json!({
-            "query": query,
-            "packages": [scenario.target.lineage()],
-        });
-        if let Some(limit) = self.policy.search_limit {
-            args["limit"] = json!(limit);
-        }
-        args
+            .unwrap_or_else(|| scenario.question.clone())
     }
 
     /// Pull identities out of a search response, preferring the structured
@@ -323,58 +379,58 @@ impl Adapter for NudoxAdapter {
     }
 
     async fn preflight(&mut self, scenarios: &[Scenario]) -> anyhow::Result<()> {
-        if !self.ensure_indexed {
-            return Ok(());
-        }
-        if !self.policy.allows("index") {
-            tracing::warn!("{}: policy forbids `index`; skipping preflight", self.policy.name);
-            return Ok(());
+        if self.ensure_indexed {
+            self.index_roots(scenarios).await;
         }
 
-        // One `index` call per distinct root. Targets are deduplicated
-        // because indexing runs a real compiler front end and costs seconds
-        // to minutes per package.
-        let mut roots: Vec<String> = Vec::new();
-        for scenario in scenarios {
-            if let Some(root) = &scenario.target.root {
-                let rendered = root.display().to_string();
-                if !roots.contains(&rendered) {
-                    roots.push(rendered);
+        // Census the corpus after any indexing, so a package this run just
+        // added is counted as present.
+        if self.policy.allows("packages") {
+            match self.client.call_tool("packages", json!({})).await {
+                Ok(response) => {
+                    let loaded = parse_lineages(&response.raw, &response.text);
+                    tracing::info!("{}: corpus holds {:?}", self.policy.name, loaded);
+                    self.loaded = Some(loaded);
                 }
-            }
-        }
-        if roots.is_empty() {
-            return Ok(());
-        }
-
-        tracing::info!(
-            "{}: indexing {} root(s) so the corpus matches what the file-based \
-             adapters read",
-            self.policy.name,
-            roots.len()
-        );
-        let args = json!({ "targets": roots, "wait_seconds": self.index_wait_seconds });
-        match self.client.call_tool("index", args).await {
-            Ok(response) => {
-                // `index` reports every target separately and returns
-                // `running` rather than failing when the deadline expires, so
-                // a non-error response is not proof everything landed. The
-                // response is logged whole rather than parsed into a verdict
-                // the tool did not give.
-                tracing::info!("index preflight:\n{}", response.text);
-                if response.is_error {
-                    tracing::warn!("index preflight reported an error; \
-                                    scenarios may answer from a different version");
+                Err(e) => {
+                    // Attempt everything rather than skip everything.
+                    tracing::warn!("{}: package census failed: {e:#}", self.policy.name);
                 }
-            }
-            Err(e) => {
-                tracing::warn!("index preflight failed: {e:#}");
             }
         }
         Ok(())
     }
 
     async fn attempt(&mut self, scenario: &Scenario) -> Attempt {
+        // A package this corpus does not hold is out of reach, not answered
+        // wrongly.
+        //
+        // This is the same distinction the harness already draws for
+        // rust-analyzer declining Go, and it has to be drawn here too or the
+        // comparison is rigged in the other direction: an unindexed package
+        // would score Nudox a confident 0% at ~100 tokens, which reads on the
+        // chart as "answered cheaply and badly" when what happened is
+        // "was never asked to hold this". `packages` is explicit that an
+        // unloaded package returns an empty version list rather than an
+        // error, precisely so a caller can tell those apart.
+        if let Some(loaded) = &self.loaded {
+            let lineage = scenario.target.lineage();
+            if !loaded.iter().any(|l| *l == lineage) {
+                return Attempt::unsupported(
+                    &self.policy.name,
+                    scenario,
+                    format!(
+                        "`{lineage}` is not loaded in this corpus (loaded: {})",
+                        if loaded.is_empty() {
+                            "nothing".to_owned()
+                        } else {
+                            loaded.join(", ")
+                        }
+                    ),
+                );
+            }
+        }
+
         let mut builder =
             AttemptBuilder::new(&self.policy.name, scenario, self.resident, self.keep_responses);
         let mut error = None;
@@ -462,6 +518,16 @@ impl Adapter for NudoxAdapter {
             return builder.finish(error);
         };
         let identity = identity.to_owned();
+        if !hit.honoured(self.policy.address_mode) {
+            builder.note_degraded(format!(
+                "~ablation:not-exercised(address_mode={:?}; search returned no {} to send back)",
+                self.policy.address_mode,
+                match self.policy.address_mode {
+                    AddressMode::Key => "64-hex key",
+                    AddressMode::Address => "address",
+                }
+            ));
+        }
 
         match scenario.task {
             TaskKind::Callers | TaskKind::Outbound => {
@@ -513,6 +579,57 @@ impl Adapter for NudoxAdapter {
     }
 
     async fn shutdown(&mut self) {}
+}
+
+impl NudoxAdapter {
+    async fn index_roots(&mut self, scenarios: &[Scenario]) {
+        if !self.policy.allows("index") {
+            tracing::warn!("{}: policy forbids `index`; skipping indexing", self.policy.name);
+            return;
+        }
+
+        // One `index` call per distinct root. Targets are deduplicated
+        // because indexing runs a real compiler front end and costs seconds
+        // to minutes per package.
+        let mut roots: Vec<String> = Vec::new();
+        for scenario in scenarios {
+            if let Some(root) = &scenario.target.root {
+                let rendered = root.display().to_string();
+                if !roots.contains(&rendered) {
+                    roots.push(rendered);
+                }
+            }
+        }
+        if roots.is_empty() {
+            return;
+        }
+
+        let _ = &self.loaded;
+        tracing::info!(
+            "{}: indexing {} root(s) so the corpus matches what the file-based \
+             adapters read",
+            self.policy.name,
+            roots.len()
+        );
+        let args = json!({ "targets": roots, "wait_seconds": self.index_wait_seconds });
+        match self.client.call_tool("index", args).await {
+            Ok(response) => {
+                // `index` reports every target separately and returns
+                // `running` rather than failing when the deadline expires, so
+                // a non-error response is not proof everything landed. The
+                // response is logged whole rather than parsed into a verdict
+                // the tool did not give.
+                tracing::info!("index preflight:\n{}", response.text);
+                if response.is_error {
+                    tracing::warn!("index preflight reported an error; \
+                                    scenarios may answer from a different version");
+                }
+            }
+            Err(e) => {
+                tracing::warn!("index preflight failed: {e:#}");
+            }
+        }
+    }
 }
 
 impl NudoxAdapter {
@@ -569,6 +686,43 @@ impl NudoxAdapter {
             }
         }
     }
+}
+
+/// Which package lineages the corpus holds, from a `packages` response.
+///
+/// Reads the Markdown, because that is what an agent sees. The renderer
+/// writes each package as ``package: `cargo:memchr` `` — a version list that
+/// is empty still produces that line, which is exactly the signal `packages`
+/// documents for telling "not indexed here" apart from "does not exist".
+fn parse_lineages(raw: &Value, markdown: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Some(entries) = raw
+        .pointer("/structuredContent/packages")
+        .and_then(Value::as_array)
+    {
+        for entry in entries {
+            if let Some(lineage) = entry
+                .get("lineage")
+                .or_else(|| entry.get("package"))
+                .and_then(Value::as_str)
+            {
+                out.push(lineage.to_owned());
+            }
+        }
+    }
+    if out.is_empty() {
+        for line in markdown.lines() {
+            let line = line.trim();
+            let Some(rest) = line.strip_prefix("package: ") else {
+                continue;
+            };
+            let lineage = rest.trim().trim_matches('`');
+            if !lineage.is_empty() {
+                out.push(lineage.to_owned());
+            }
+        }
+    }
+    out
 }
 
 /// A Trustfall query for the structural tasks.
@@ -653,6 +807,31 @@ cargo:memchr#0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
         };
         assert!(hit.identity(AddressMode::Address).unwrap().contains("::"));
         assert!(hit.identity(AddressMode::Key).unwrap().contains('#'));
+    }
+
+    #[test]
+    fn loaded_lineages_parse_from_the_markdown() {
+        let markdown = "\
+## Packages · 2
+
+package: `cargo:memchr`
+| version |  | symbols |
+| --- | --- | --- |
+| 2.8.3 | current | 2129 |
+
+package: `npm:commander`
+| version |  | symbols |
+| --- | --- | --- |
+| 0.0.0 | current | 945 |
+";
+        let loaded = parse_lineages(&Value::Null, markdown);
+        assert_eq!(loaded, vec!["cargo:memchr", "npm:commander"]);
+    }
+
+    #[test]
+    fn an_unloaded_package_is_simply_absent_from_the_census() {
+        let loaded = parse_lineages(&Value::Null, "## Packages · 0\n\n(none)\n");
+        assert!(loaded.is_empty());
     }
 
     #[test]

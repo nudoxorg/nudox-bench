@@ -62,6 +62,21 @@ pub struct Attempt {
     pub unsupported: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// Capabilities the system reported as unavailable while answering.
+    ///
+    /// # Why this is not just a log line
+    ///
+    /// A benchmark result is only meaningful alongside what was switched on
+    /// when it was taken. Nudox's search combines structural and semantic
+    /// ranking, but the semantic half needs an embedding model, and without
+    /// one the response says so inline (`~sem:unavailable(NoModelConfigured)`)
+    /// and quietly returns structural hits only. Nothing errors. A reader
+    /// handed "nudox scored 75%" would have no way to know half the ranking
+    /// was off — and would draw exactly the wrong conclusion about what the
+    /// remaining half is worth. So degradations are collected per attempt and
+    /// reprinted at the top of the report.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub degraded: Vec<String>,
 }
 
 impl Attempt {
@@ -77,8 +92,34 @@ impl Attempt {
             elapsed_ms: 0,
             unsupported: Some(why.into()),
             error: None,
+            degraded: Vec::new(),
         }
     }
+}
+
+/// Recognise a capability the response says was unavailable.
+///
+/// Nudox marks these with a `~` signal prefix — a coverage note rather than a
+/// row of data. The two that change what a score means are semantic ranking
+/// (`~sem:`) and unrecorded references (`~refs:not_recorded`).
+pub fn degradations_in(text: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        let is_degraded = line.starts_with("~sem:unavailable")
+            || line.starts_with("~sem:building")
+            || line.starts_with("~refs:not_recorded");
+        if is_degraded {
+            // Keep the parenthesised reason, drop any trailing remedy prose:
+            // the report wants a stable label, not a paragraph, and the
+            // remedy is already in the transcript.
+            let label = line.split(" — ").next().unwrap_or(line).to_owned();
+            if !found.contains(&label) {
+                found.push(label);
+            }
+        }
+    }
+    found
 }
 
 /// Accumulates steps and their costs so every adapter reports cost the same
@@ -93,6 +134,7 @@ pub struct AttemptBuilder {
     cost: AttemptCost,
     started: std::time::Instant,
     keep_responses: bool,
+    degraded: Vec<String>,
 }
 
 impl AttemptBuilder {
@@ -108,6 +150,7 @@ impl AttemptBuilder {
             },
             started: std::time::Instant::now(),
             keep_responses,
+            degraded: Vec::new(),
         }
     }
 
@@ -128,6 +171,11 @@ impl AttemptBuilder {
             self.context.push_str("\n\n");
         }
         self.context.push_str(response);
+        for degradation in degradations_in(response) {
+            if !self.degraded.contains(&degradation) {
+                self.degraded.push(degradation);
+            }
+        }
         self.steps.push(Step {
             label: label.into(),
             request,
@@ -136,6 +184,15 @@ impl AttemptBuilder {
             is_error,
             response: self.keep_responses.then(|| response.to_owned()),
         });
+    }
+
+    /// Record a degradation an adapter detected itself, rather than one read
+    /// out of a response body.
+    pub fn note_degraded(&mut self, note: impl Into<String>) {
+        let note = note.into();
+        if !self.degraded.contains(&note) {
+            self.degraded.push(note);
+        }
     }
 
     pub fn tool_calls(&self) -> u32 {
@@ -159,6 +216,7 @@ impl AttemptBuilder {
             elapsed_ms: self.started.elapsed().as_millis(),
             unsupported: None,
             error,
+            degraded: self.degraded,
         }
     }
 }
@@ -202,4 +260,35 @@ pub trait Adapter: Send {
 
     /// Release anything long-lived (child processes, sessions).
     async fn shutdown(&mut self) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_unavailable_embedder_is_caught() {
+        let response = "## Search · 0\n\
+            ~sem:unavailable(NoModelConfigured) — the embedding runtime is always \
+            compiled in, so no rebuild is possible or needed — set NUDOX_EMBED_MODEL_DIR\n\
+            (no matches)";
+        let found = degradations_in(response);
+        assert_eq!(found, vec!["~sem:unavailable(NoModelConfigured)"]);
+    }
+
+    #[test]
+    fn a_healthy_response_reports_nothing() {
+        // `~sem:ready` and `~scope:default` are normal operation, not
+        // degradation — flagging them would make the warning meaningless.
+        let response = "## Search · 3\n~sem:ready\n~scope:default (excluded Field)\nx";
+        assert!(degradations_in(response).is_empty());
+    }
+
+    #[test]
+    fn a_partially_built_index_counts() {
+        assert_eq!(
+            degradations_in("~sem:building(12/2129)"),
+            vec!["~sem:building(12/2129)"]
+        );
+    }
 }

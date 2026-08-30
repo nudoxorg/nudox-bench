@@ -180,6 +180,7 @@ async fn wait_for_packages(
     let events = engine.packages();
     let deadline = tokio::time::Instant::now() + timeout;
     let mut outstanding: Vec<String> = expected.to_vec();
+    let mut failed: Vec<String> = Vec::new();
 
     while !outstanding.is_empty() {
         match tokio::time::timeout_at(deadline, events.recv_async()).await {
@@ -191,18 +192,31 @@ async fn wait_for_packages(
                 }
             }
             Ok(Ok(PackageLoadEvent::LoadFailed { name, error, .. })) => {
-                bail!("{name} failed to load: {error}");
+                // Not fatal. A benchmark corpus deliberately spans seven
+                // languages, and some producers need optional features or an
+                // external oracle that may not be installed. One package
+                // failing to lower is a result to record, not a reason to
+                // refuse to serve the ones that did.
+                let name = name.to_string();
+                outstanding.retain(|n| *n != name);
+                eprintln!("WARN {name} failed to load: {error}");
+                failed.push(name);
             }
             Ok(Ok(_)) => {}
             // The channel closing means every load already happened.
             Ok(Err(_)) => return Ok(()),
-            Err(_) => bail!(
-                "timed out after {:?} with {} package(s) still loading: {}",
-                timeout,
-                outstanding.len(),
-                outstanding.join(", ")
-            ),
+            Err(_) => {
+                eprintln!(
+                    "WARN timed out after {timeout:?} with {} package(s) still loading: {}",
+                    outstanding.len(),
+                    outstanding.join(", ")
+                );
+                break;
+            }
         }
+    }
+    if !failed.is_empty() {
+        eprintln!("\n{} package(s) did not load: {}", failed.len(), failed.join(", "));
     }
     Ok(())
 }

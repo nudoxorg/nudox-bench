@@ -200,6 +200,29 @@ impl RunReport {
         out.push_str(&format!("# nudox-bench run `{}`\n\n", self.run_id));
         out.push_str(&format!("{}\n\n", self.timestamp));
 
+        let mut degraded: Vec<(String, String)> = Vec::new();
+        for outcome in &self.outcomes {
+            for note in &outcome.attempt.degraded {
+                let entry = (outcome.adapter.clone(), note.clone());
+                if !degraded.contains(&entry) {
+                    degraded.push(entry);
+                }
+            }
+        }
+        if !degraded.is_empty() {
+            out.push_str("## ⚠ Degraded capabilities during this run\n\n");
+            out.push_str(
+                "A system reported part of itself unavailable while answering. \
+                 Every number below was measured in that state — read them as a \
+                 result about the configuration that ran, not about the system at \
+                 full capability.\n\n",
+            );
+            for (adapter, note) in &degraded {
+                out.push_str(&format!("- **{adapter}** — `{note}`\n"));
+            }
+            out.push('\n');
+        }
+
         out.push_str("## Surface cost before any question\n\n");
         out.push_str(
             "What each system puts in an agent's context before it is asked anything: \
@@ -363,6 +386,7 @@ mod tests {
             elapsed_ms: 10,
             unsupported: unsupported.then(|| "nope".to_owned()),
             error: None,
+            degraded: Vec::new(),
         }
     }
 

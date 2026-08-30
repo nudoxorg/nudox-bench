@@ -1,0 +1,24 @@
+# The whole matrix: every Nudox ablation against both baselines, one run.
+# This is the config the published charts come from.
+name = "everything"
+description = "All five Nudox policies plus ripgrep and rust-analyzer"
+
+[[adapter]]
+kind = "nudox"
+policy = "full"
+[[adapter]]
+kind = "nudox"
+policy = "oneshot"
+[[adapter]]
+kind = "nudox"
+policy = "search-only"
+[[adapter]]
+kind = "nudox"
+policy = "graph-first"
+[[adapter]]
+kind = "nudox"
+policy = "keys"
+[[adapter]]
+kind = "ripgrep"
+[[adapter]]
+kind = "rust-analyzer"

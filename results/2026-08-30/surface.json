@@ -1,0 +1,59 @@
+{
+  "total": 3761,
+  "tools": [
+    {
+      "name": "index",
+      "cl100k": 946,
+      "o200k": 947,
+      "bytes": 3828
+    },
+    {
+      "name": "search",
+      "cl100k": 566,
+      "o200k": 563,
+      "bytes": 2429
+    },
+    {
+      "name": "read",
+      "cl100k": 471,
+      "o200k": 469,
+      "bytes": 2072
+    },
+    {
+      "name": "diff",
+      "cl100k": 418,
+      "o200k": 413,
+      "bytes": 1700
+    },
+    {
+      "name": "refs",
+      "cl100k": 393,
+      "o200k": 390,
+      "bytes": 1623
+    },
+    {
+      "name": "select_version",
+      "cl100k": 315,
+      "o200k": 311,
+      "bytes": 1262
+    },
+    {
+      "name": "graph",
+      "cl100k": 263,
+      "o200k": 263,
+      "bytes": 1193
+    },
+    {
+      "name": "packages",
+      "cl100k": 255,
+      "o200k": 252,
+      "bytes": 1033
+    },
+    {
+      "name": "schema",
+      "cl100k": 134,
+      "o200k": 134,
+      "bytes": 597
+    }
+  ]
+}
