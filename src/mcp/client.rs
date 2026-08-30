@@ -106,6 +106,9 @@ pub struct McpClient {
     server_name: String,
 }
 
+/// Boxed because the two variants differ sharply in size — an HTTP session is
+/// a client handle and two strings; a stdio session carries a child process
+/// and two buffered pipes.
 enum Transport {
     Http {
         client: reqwest::Client,
@@ -113,14 +116,17 @@ enum Transport {
         token: Option<String>,
         session_id: Mutex<Option<String>>,
     },
-    Stdio {
-        /// Held so the child is not reaped while the session is open; the
-        /// handle itself is never read.
-        #[allow(dead_code)]
-        child: Mutex<Child>,
-        stdin: Mutex<ChildStdin>,
-        stdout: Mutex<BufReader<ChildStdout>>,
-    },
+    Stdio(Box<StdioSession>),
+}
+
+/// The state of a stdio MCP session.
+struct StdioSession {
+    /// Held so the child is not reaped while the session is open; the handle
+    /// itself is never read.
+    #[allow(dead_code)]
+    child: Mutex<Child>,
+    stdin: Mutex<ChildStdin>,
+    stdout: Mutex<BufReader<ChildStdout>>,
 }
 
 impl McpClient {
@@ -147,11 +153,11 @@ impl McpClient {
                     .with_context(|| format!("spawning MCP server `{command}`"))?;
                 let stdin = child.stdin.take().ok_or_else(|| anyhow!("no stdin"))?;
                 let stdout = child.stdout.take().ok_or_else(|| anyhow!("no stdout"))?;
-                Transport::Stdio {
+                Transport::Stdio(Box::new(StdioSession {
                     child: Mutex::new(child),
                     stdin: Mutex::new(stdin),
                     stdout: Mutex::new(BufReader::new(stdout)),
-                }
+                }))
             }
         };
 
@@ -275,7 +281,8 @@ impl McpClient {
                 let _ = self.http_post(&body).await;
                 Ok(())
             }
-            Transport::Stdio { stdin, .. } => {
+            Transport::Stdio(session) => {
+                let stdin = &session.stdin;
                 let mut line = serde_json::to_string(&body)?;
                 line.push('\n');
                 stdin.lock().await.write_all(line.as_bytes()).await?;
@@ -290,7 +297,8 @@ impl McpClient {
 
         let response: Value = match &self.transport {
             Transport::Http { .. } => self.http_post(&body).await?,
-            Transport::Stdio { stdin, stdout, .. } => {
+            Transport::Stdio(session) => {
+                let (stdin, stdout) = (&session.stdin, &session.stdout);
                 let mut line = serde_json::to_string(&body)?;
                 line.push('\n');
                 stdin.lock().await.write_all(line.as_bytes()).await?;

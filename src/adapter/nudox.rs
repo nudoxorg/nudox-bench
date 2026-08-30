@@ -405,13 +405,11 @@ impl Adapter for NudoxAdapter {
                 self.call(&mut builder, "diff", args, &mut error).await;
                 return builder.finish(error);
             }
-            TaskKind::Overview => {
-                if self.policy.allows("packages") {
-                    let args = json!({ "package": scenario.target.lineage() });
-                    self.call(&mut builder, "packages", args, &mut error).await;
-                    if self.policy.oneshot {
-                        return builder.finish(error);
-                    }
+            TaskKind::Overview if self.policy.allows("packages") => {
+                let args = json!({ "package": scenario.target.lineage() });
+                self.call(&mut builder, "packages", args, &mut error).await;
+                if self.policy.oneshot {
+                    return builder.finish(error);
                 }
             }
             _ => {}

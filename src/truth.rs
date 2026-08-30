@@ -79,10 +79,19 @@ impl DeterministicScore {
 /// `/` as interchangeable segment boundaries, so this follows that rule
 /// rather than inventing a second one.
 fn normalize_path(s: &str) -> String {
-    s.replace("::", "\u{1}")
-        .replace('.', "\u{1}")
-        .replace('/', "\u{1}")
-        .to_ascii_lowercase()
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            ':' if chars.peek() == Some(&':') => {
+                chars.next();
+                out.push('\u{1}');
+            }
+            '.' | '/' => out.push('\u{1}'),
+            other => out.extend(other.to_lowercase()),
+        }
+    }
+    out
 }
 
 /// Whether `needle` appears in `haystack` bounded by non-identifier

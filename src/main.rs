@@ -150,7 +150,7 @@ async fn main() -> Result<()> {
                     .iter()
                     .map(|t| (t.name.clone(), TokenCount::measure(&t.resident_text())))
                     .collect();
-                rows.sort_by(|a, b| b.1.cl100k.cmp(&a.1.cl100k));
+                rows.sort_by_key(|(_, cost)| std::cmp::Reverse(cost.cl100k));
                 println!("\n| tool | cl100k | o200k | bytes |");
                 println!("|---|---:|---:|---:|");
                 for (name, cost) in rows {
