@@ -1,0 +1,35 @@
+[package]
+name = "nudox-bench"
+version = "0.1.0"
+edition = "2021"
+description = "Benchmark harness for the Nudox code-intelligence MCP surface"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "nbench"
+path = "src/main.rs"
+
+[lib]
+name = "nudox_bench"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = "1"
+async-trait = "0.1"
+thiserror = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+clap = { version = "4", features = ["derive", "env"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "io-util", "time", "sync"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+futures-util = "0.3"
+tiktoken-rs = "0.6"
+walkdir = "2"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+debug = 1

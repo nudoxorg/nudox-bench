@@ -1,0 +1,668 @@
+//! The Nudox MCP adapter, and the ablations run against it.
+//!
+//! # What an ablation is here
+//!
+//! The first question this benchmark has to answer is not "is Nudox better
+//! than Context7" — it is "which parts of Nudox are carrying the result".
+//! That is answered by running the *same* server under different [`Policy`]
+//! settings and diffing the numbers. Every policy below is a client-side
+//! restriction: none of them needs a rebuilt server, so an ablation sweep
+//! costs one `cargo run`, not seven.
+//!
+//! The policies map onto claims in `Backend/docs/MCP-SURFACE-PLAN.md`:
+//!
+//! | policy | claim it tests |
+//! |---|---|
+//! | `full` | the shipped surface, as the baseline every other row is read against |
+//! | `oneshot` | §1 — how much of the answer is in the *first* response, which is all a one-call harness like context-bench ever sees |
+//! | `search-only` | §2.3 — the unified search really does subsume the structural/semantic split |
+//! | `no-followup` | how much value `read`/`refs` add over the search hit alone |
+//! | `graph-first` | §1.2 — whether the escape hatch plus its schema card beats the purpose-built tools, and what the card costs |
+//! | `keys-not-addresses` | §1.3 — the 54-token hash against the 20-token address, measured end to end rather than on a single string |
+
+use std::time::Instant;
+
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+
+use super::{Adapter, Attempt, AttemptBuilder};
+use crate::mcp::{McpClient, McpTransport};
+use crate::scenario::{Scenario, TaskKind};
+use crate::tokens::TokenCount;
+
+/// Which identity spelling the adapter feeds back into follow-up calls.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AddressMode {
+    /// Prefer the rendered address (`cargo:memchr@2.8.3::memchr::memchr3[function]`).
+    #[default]
+    Address,
+    /// Force the 64-hex stable key, even where an address is available.
+    Key,
+}
+
+/// A client-side restriction on how the Nudox surface may be used.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Policy {
+    pub name: String,
+    pub description: String,
+    /// Tools this policy may call. `None` means every tool.
+    #[serde(default)]
+    pub allowed_tools: Option<Vec<String>>,
+    /// Stop after the first tool call, whatever it returned.
+    #[serde(default)]
+    pub oneshot: bool,
+    /// Route structural questions through `graph` (after `schema`) instead of
+    /// the purpose-built tool.
+    #[serde(default)]
+    pub graph_first: bool,
+    #[serde(default)]
+    pub address_mode: AddressMode,
+    /// `limit` passed to `search`. Lower is cheaper and riskier.
+    #[serde(default)]
+    pub search_limit: Option<u32>,
+}
+
+impl Policy {
+    /// The shipped surface, unrestricted.
+    pub fn full() -> Self {
+        Self {
+            name: "nudox-full".into(),
+            description: "All nine tools, natural search→read/refs routing".into(),
+            allowed_tools: None,
+            oneshot: false,
+            graph_first: false,
+            address_mode: AddressMode::Address,
+            search_limit: None,
+        }
+    }
+
+    /// One tool call and stop — the context-bench comparison shape.
+    pub fn oneshot() -> Self {
+        Self {
+            name: "nudox-oneshot".into(),
+            description: "A single tool call per scenario, context-bench style".into(),
+            allowed_tools: None,
+            oneshot: true,
+            graph_first: false,
+            address_mode: AddressMode::Address,
+            search_limit: None,
+        }
+    }
+
+    /// `search` and nothing else, however many calls.
+    pub fn search_only() -> Self {
+        Self {
+            name: "nudox-search-only".into(),
+            description: "Only `search`; no read, refs, graph or diff".into(),
+            allowed_tools: Some(vec!["search".into()]),
+            oneshot: false,
+            graph_first: false,
+            address_mode: AddressMode::Address,
+            search_limit: None,
+        }
+    }
+
+    /// Structural questions go through the escape hatch.
+    pub fn graph_first() -> Self {
+        Self {
+            name: "nudox-graph-first".into(),
+            description: "schema + graph for structural questions".into(),
+            allowed_tools: None,
+            oneshot: false,
+            graph_first: true,
+            address_mode: AddressMode::Address,
+            search_limit: None,
+        }
+    }
+
+    /// Identical to `full` except identities are echoed as 64-hex keys.
+    pub fn keys_not_addresses() -> Self {
+        Self {
+            name: "nudox-keys".into(),
+            description: "Full surface, but follow-ups use 64-hex keys not addresses".into(),
+            allowed_tools: None,
+            oneshot: false,
+            graph_first: false,
+            address_mode: AddressMode::Key,
+            search_limit: None,
+        }
+    }
+
+    /// Every built-in ablation, in report order.
+    pub fn all() -> Vec<Policy> {
+        vec![
+            Policy::full(),
+            Policy::oneshot(),
+            Policy::search_only(),
+            Policy::graph_first(),
+            Policy::keys_not_addresses(),
+        ]
+    }
+
+    fn allows(&self, tool: &str) -> bool {
+        match &self.allowed_tools {
+            None => true,
+            Some(list) => list.iter().any(|t| t == tool),
+        }
+    }
+}
+
+/// One identity pulled out of a search response.
+#[derive(Clone, Debug)]
+struct Hit {
+    key: Option<String>,
+    address: Option<String>,
+}
+
+impl Hit {
+    fn identity(&self, mode: AddressMode) -> Option<&str> {
+        match mode {
+            AddressMode::Address => self.address.as_deref().or(self.key.as_deref()),
+            AddressMode::Key => self.key.as_deref().or(self.address.as_deref()),
+        }
+    }
+}
+
+/// Nudox, reached over its loopback streamable-HTTP endpoint.
+pub struct NudoxAdapter {
+    client: McpClient,
+    policy: Policy,
+    resident: TokenCount,
+    keep_responses: bool,
+    /// Index each scenario's `target.root` before running, so the corpus and
+    /// the file-based adapters answer about the same code.
+    ensure_indexed: bool,
+    /// Deadline handed to `index`, which covers the whole batch.
+    index_wait_seconds: u32,
+}
+
+impl NudoxAdapter {
+    /// Connect to a running endpoint.
+    ///
+    /// Nudox has no standalone server binary: the MCP endpoint is started
+    /// inside the `lindsey` GUI process (`McpHost::start`), which mints a
+    /// fresh launch token each time and binds an ephemeral loopback port. So
+    /// the URL and token are inputs to this harness, not something it can
+    /// discover — `docs/RUNNING.md` records how to read them off
+    /// the running host.
+    pub async fn connect(
+        url: &str,
+        token: Option<String>,
+        policy: Policy,
+        keep_responses: bool,
+        ensure_indexed: bool,
+    ) -> anyhow::Result<Self> {
+        let client = McpClient::connect(McpTransport::Http {
+            url: url.to_owned(),
+            token,
+        })
+        .await?;
+        let resident = client.resident_cost();
+        Ok(Self {
+            client,
+            policy,
+            resident,
+            keep_responses,
+            ensure_indexed,
+            index_wait_seconds: 600,
+        })
+    }
+
+    /// The `search` call every task starts from.
+    fn search_args(&self, scenario: &Scenario) -> Value {
+        let query = scenario
+            .probe
+            .query
+            .clone()
+            .or_else(|| scenario.probe.name.clone())
+            .or_else(|| {
+                scenario
+                    .probe
+                    .symbol
+                    .as_ref()
+                    .and_then(|s| s.rsplit("::").next().map(str::to_owned))
+            })
+            .unwrap_or_else(|| scenario.question.clone());
+
+        let mut args = json!({
+            "query": query,
+            "packages": [scenario.target.lineage()],
+        });
+        if let Some(limit) = self.policy.search_limit {
+            args["limit"] = json!(limit);
+        }
+        args
+    }
+
+    /// Pull identities out of a search response, preferring the structured
+    /// result and falling back to the Markdown projection.
+    ///
+    /// Both paths exist because the Markdown *is* the agent-facing surface —
+    /// if an identity cannot be recovered from it, an agent could not have
+    /// used it either, and that is worth knowing rather than papering over
+    /// with the structured copy.
+    fn hits_from(raw: &Value, markdown: &str) -> Vec<Hit> {
+        let mut out = Vec::new();
+        if let Some(hits) = raw
+            .pointer("/structuredContent/hits")
+            .and_then(Value::as_array)
+        {
+            for hit in hits {
+                let key = hit
+                    .pointer("/hit/key")
+                    .or_else(|| hit.get("key"))
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
+                let address = hit.get("address").and_then(Value::as_str).map(str::to_owned);
+                if key.is_some() || address.is_some() {
+                    out.push(Hit { key, address });
+                }
+            }
+        }
+        if out.is_empty() {
+            out = parse_identities(markdown);
+        }
+        out
+    }
+}
+
+/// Recover identities from the Markdown search projection.
+///
+/// The renderer writes each hit as an identity line at column zero followed
+/// by a two-space-indented declaration, so an unindented line carrying an
+/// `ecosystem:` prefix is an identity and nothing else is.
+fn parse_identities(markdown: &str) -> Vec<Hit> {
+    let mut out = Vec::new();
+    for line in markdown.lines() {
+        if line.starts_with(' ') || line.starts_with('#') || line.starts_with('~') {
+            continue;
+        }
+        let line = line.trim_end();
+        if line.is_empty() || !line.contains(':') {
+            continue;
+        }
+        // A key is `ecosystem:name#<64 hex>`; an address is
+        // `ecosystem:name[@version][::path][kind]`.
+        if let Some((_, hex)) = line.rsplit_once('#') {
+            if hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+                out.push(Hit {
+                    key: Some(line.to_owned()),
+                    address: None,
+                });
+                continue;
+            }
+        }
+        if line.contains("::") || line.ends_with(']') {
+            out.push(Hit {
+                key: None,
+                address: Some(line.to_owned()),
+            });
+        }
+    }
+    out
+}
+
+#[async_trait::async_trait]
+impl Adapter for NudoxAdapter {
+    fn name(&self) -> &str {
+        &self.policy.name
+    }
+
+    fn description(&self) -> String {
+        format!(
+            "{} ({} tools resident, {} cl100k)",
+            self.policy.description,
+            self.client.tools().len(),
+            self.resident.cl100k
+        )
+    }
+
+    fn resident_cost(&self) -> TokenCount {
+        self.resident
+    }
+
+    async fn preflight(&mut self, scenarios: &[Scenario]) -> anyhow::Result<()> {
+        if !self.ensure_indexed {
+            return Ok(());
+        }
+        if !self.policy.allows("index") {
+            tracing::warn!("{}: policy forbids `index`; skipping preflight", self.policy.name);
+            return Ok(());
+        }
+
+        // One `index` call per distinct root. Targets are deduplicated
+        // because indexing runs a real compiler front end and costs seconds
+        // to minutes per package.
+        let mut roots: Vec<String> = Vec::new();
+        for scenario in scenarios {
+            if let Some(root) = &scenario.target.root {
+                let rendered = root.display().to_string();
+                if !roots.contains(&rendered) {
+                    roots.push(rendered);
+                }
+            }
+        }
+        if roots.is_empty() {
+            return Ok(());
+        }
+
+        tracing::info!(
+            "{}: indexing {} root(s) so the corpus matches what the file-based \
+             adapters read",
+            self.policy.name,
+            roots.len()
+        );
+        let args = json!({ "targets": roots, "wait_seconds": self.index_wait_seconds });
+        match self.client.call_tool("index", args).await {
+            Ok(response) => {
+                // `index` reports every target separately and returns
+                // `running` rather than failing when the deadline expires, so
+                // a non-error response is not proof everything landed. The
+                // response is logged whole rather than parsed into a verdict
+                // the tool did not give.
+                tracing::info!("index preflight:\n{}", response.text);
+                if response.is_error {
+                    tracing::warn!("index preflight reported an error; \
+                                    scenarios may answer from a different version");
+                }
+            }
+            Err(e) => {
+                tracing::warn!("index preflight failed: {e:#}");
+            }
+        }
+        Ok(())
+    }
+
+    async fn attempt(&mut self, scenario: &Scenario) -> Attempt {
+        let mut builder =
+            AttemptBuilder::new(&self.policy.name, scenario, self.resident, self.keep_responses);
+        let mut error = None;
+
+        // `diff` and `packages` answer directly; nothing else needs a search
+        // to find the subject first.
+        match scenario.task {
+            TaskKind::Diff => {
+                if !self.policy.allows("diff") {
+                    return Attempt::unsupported(
+                        &self.policy.name,
+                        scenario,
+                        "policy forbids `diff`",
+                    );
+                }
+                let Some(to) = scenario.target.to_version.as_ref() else {
+                    return Attempt::unsupported(
+                        &self.policy.name,
+                        scenario,
+                        "scenario has no to_version",
+                    );
+                };
+                let args = json!({
+                    "package": scenario.target.lineage(),
+                    "from_version": scenario.target.version,
+                    "to_version": to,
+                });
+                self.call(&mut builder, "diff", args, &mut error).await;
+                return builder.finish(error);
+            }
+            TaskKind::Overview => {
+                if self.policy.allows("packages") {
+                    let args = json!({ "package": scenario.target.lineage() });
+                    self.call(&mut builder, "packages", args, &mut error).await;
+                    if self.policy.oneshot {
+                        return builder.finish(error);
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        // The structural questions the escape hatch is for.
+        if self.policy.graph_first
+            && matches!(scenario.task, TaskKind::Implementors | TaskKind::Callers)
+            && self.policy.allows("graph")
+        {
+            if self.policy.allows("schema") {
+                self.call(&mut builder, "schema", json!({}), &mut error).await;
+                if self.policy.oneshot {
+                    return builder.finish(error);
+                }
+            }
+            if let Some(query) = graph_query_for(scenario) {
+                let args = json!({
+                    "query": query,
+                    "variables": {
+                        "package": scenario.target.package,
+                        "name": scenario.probe.name.clone()
+                            .or_else(|| scenario.probe.symbol.as_ref()
+                                .and_then(|s| s.rsplit("::").next().map(str::to_owned)))
+                            .unwrap_or_default(),
+                    }
+                });
+                self.call(&mut builder, "graph", args, &mut error).await;
+                return builder.finish(error);
+            }
+        }
+
+        // Everything else starts with a search.
+        if !self.policy.allows("search") {
+            return Attempt::unsupported(&self.policy.name, scenario, "policy forbids `search`");
+        }
+        let search_args = self.search_args(scenario);
+        let hits = self
+            .call_search(&mut builder, search_args, &mut error)
+            .await;
+
+        if self.policy.oneshot || matches!(scenario.task, TaskKind::Search | TaskKind::Implement) {
+            return builder.finish(error);
+        }
+
+        let Some(hit) = hits.first() else {
+            return builder.finish(error);
+        };
+        let Some(identity) = hit.identity(self.policy.address_mode) else {
+            return builder.finish(error);
+        };
+        let identity = identity.to_owned();
+
+        match scenario.task {
+            TaskKind::Callers | TaskKind::Outbound => {
+                if self.policy.allows("refs") {
+                    let direction = if scenario.task == TaskKind::Callers {
+                        "in"
+                    } else {
+                        "out"
+                    };
+                    let args = json!({ "key": identity, "direction": direction });
+                    self.call(&mut builder, "refs", args, &mut error).await;
+                }
+            }
+            TaskKind::Definition
+            | TaskKind::Signature
+            | TaskKind::Members
+            | TaskKind::Overview => {
+                if self.policy.allows("read") {
+                    let format = if scenario.task == TaskKind::Signature {
+                        "signature"
+                    } else {
+                        "source"
+                    };
+                    let args = json!({ "keys": [identity], "format": format });
+                    self.call(&mut builder, "read", args, &mut error).await;
+                }
+            }
+            TaskKind::Implementors => {
+                if self.policy.allows("graph") {
+                    if self.policy.allows("schema") {
+                        self.call(&mut builder, "schema", json!({}), &mut error).await;
+                    }
+                    if let Some(query) = graph_query_for(scenario) {
+                        let args = json!({
+                            "query": query,
+                            "variables": {
+                                "package": scenario.target.package,
+                                "name": scenario.probe.name.clone().unwrap_or_default(),
+                            }
+                        });
+                        self.call(&mut builder, "graph", args, &mut error).await;
+                    }
+                }
+            }
+            TaskKind::Diff | TaskKind::Search | TaskKind::Implement => {}
+        }
+
+        builder.finish(error)
+    }
+
+    async fn shutdown(&mut self) {}
+}
+
+impl NudoxAdapter {
+    async fn call(
+        &self,
+        builder: &mut AttemptBuilder,
+        tool: &str,
+        args: Value,
+        error: &mut Option<String>,
+    ) {
+        let started = Instant::now();
+        match self.client.call_tool(tool, args.clone()).await {
+            Ok(response) => {
+                builder.step(
+                    tool,
+                    args.to_string(),
+                    &response.text,
+                    response.elapsed,
+                    response.is_error,
+                );
+            }
+            Err(e) => {
+                let message = format!("{tool}: {e}");
+                builder.step(tool, args.to_string(), &message, started.elapsed(), true);
+                error.get_or_insert(message);
+            }
+        }
+    }
+
+    async fn call_search(
+        &self,
+        builder: &mut AttemptBuilder,
+        args: Value,
+        error: &mut Option<String>,
+    ) -> Vec<Hit> {
+        let started = Instant::now();
+        match self.client.call_tool("search", args.clone()).await {
+            Ok(response) => {
+                let hits = Self::hits_from(&response.raw, &response.text);
+                builder.step(
+                    "search",
+                    args.to_string(),
+                    &response.text,
+                    response.elapsed,
+                    response.is_error,
+                );
+                hits
+            }
+            Err(e) => {
+                let message = format!("search: {e}");
+                builder.step("search", args.to_string(), &message, started.elapsed(), true);
+                error.get_or_insert(message);
+                Vec::new()
+            }
+        }
+    }
+}
+
+/// A Trustfall query for the structural tasks.
+///
+/// These are written against the type, property and edge names the `schema`
+/// card returns. The tool's own description is explicit that a guessed field
+/// name is an error rather than an empty result, so a scenario whose query
+/// does not compile shows up as a tool error in the transcript — visible,
+/// not silently scored zero.
+fn graph_query_for(scenario: &Scenario) -> Option<String> {
+    match scenario.task {
+        TaskKind::Implementors => Some(
+            r#"{
+  Package(name: $package) {
+    symbols {
+      ... on Trait {
+        name @filter(op: "=", value: ["$name"])
+        implementors {
+          name @output
+          kind @output
+          signature @output
+        }
+      }
+    }
+  }
+}"#
+            .to_owned(),
+        ),
+        TaskKind::Callers => Some(
+            r#"{
+  Package(name: $package) {
+    symbols {
+      name @filter(op: "=", value: ["$name"])
+      referencedBy {
+        name @output
+        kind @output
+        signature @output
+      }
+    }
+  }
+}"#
+            .to_owned(),
+        ),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn markdown_identities_parse_back_out() {
+        let markdown = "\
+## Search (2)
+~sem:ready
+~scope:default (excluded Field, Variant, Param; pass `kinds` to include them)
+cargo:memchr@2.8.3::memchr::memchr3[function]
+  pub fn memchr3(n1: u8, n2: u8, n3: u8, haystack: &[u8]) -> Option<usize>
+cargo:memchr#0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  pub fn memchr3_iter(...) [semantic]
+";
+        let hits = parse_identities(markdown);
+        assert_eq!(hits.len(), 2);
+        assert_eq!(
+            hits[0].address.as_deref(),
+            Some("cargo:memchr@2.8.3::memchr::memchr3[function]")
+        );
+        assert!(hits[1].key.as_deref().unwrap().ends_with("abcdef"));
+    }
+
+    #[test]
+    fn signals_and_headings_are_not_identities() {
+        assert!(parse_identities("## Search (0)\n~sem:ready\n(no matches)\n").is_empty());
+    }
+
+    #[test]
+    fn address_mode_picks_the_spelling_under_test() {
+        let hit = Hit {
+            key: Some("cargo:memchr#deadbeef".into()),
+            address: Some("cargo:memchr@2.8.3::memchr::memchr3[function]".into()),
+        };
+        assert!(hit.identity(AddressMode::Address).unwrap().contains("::"));
+        assert!(hit.identity(AddressMode::Key).unwrap().contains('#'));
+    }
+
+    #[test]
+    fn policies_have_distinct_names() {
+        let mut names: Vec<String> = Policy::all().into_iter().map(|p| p.name).collect();
+        names.sort();
+        let before = names.len();
+        names.dedup();
+        assert_eq!(before, names.len(), "ablation names collide in the report");
+    }
+}

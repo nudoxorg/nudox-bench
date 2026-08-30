@@ -1,0 +1,39 @@
+# Ground truth derived by reading memchr-2.8.3 directly, not from memory:
+#   rg -n 'search_slice_with_raw' src/
+# The six call sites in src/memchr.rs are at lines 31, 63, 96, 129, 167, 205,
+# inside memchr, memrchr, memchr2, memrchr2, memchr3 and memrchr3 respectively.
+id = "rust/memchr/callers-search-slice-with-raw"
+family = "retrieval"
+task = "callers"
+question = """
+In the memchr crate, which functions call the internal helper `arch::generic::memchr::search_slice_with_raw`?"""
+
+[target]
+ecosystem = "crates.io"
+package = "memchr"
+version = "2.8.3"
+root = "/home/leaf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/memchr-2.8.3"
+
+[probe]
+name = "search_slice_with_raw"
+symbol = "memchr::arch::generic::memchr::search_slice_with_raw"
+query = "search_slice_with_raw"
+kind = "function"
+
+[truth]
+mode = "symbol_set"
+all_of = [
+  "memchr::memchr",
+  "memchr::memrchr",
+  "memchr::memchr2",
+  "memchr::memrchr2",
+  "memchr::memchr3",
+  "memchr::memrchr3",
+]
+
+[budget]
+max_tool_calls = 4
+token_budget = 4000
+
+notes = """
+The architecture-specific backends (aarch64/neon, wasm32/simd128, x86_64/sse2 and avx2) also call this helper, but each is `cfg`-gated to one target, so whether they belong in the answer depends on which target the index was built for. They are deliberately in neither all_of nor none_of: this scenario scores the six portable callers in src/memchr.rs, which are true on every target."""

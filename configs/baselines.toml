@@ -1,0 +1,11 @@
+# The tools an agent already has. Runs with no endpoint, no API key and no
+# network — so this config is the one to reach for when checking that the
+# harness itself works, and it is the floor every Nudox number is read against.
+name = "baselines"
+description = "ripgrep and rust-analyzer only; no Nudox endpoint required"
+
+[[adapter]]
+kind = "ripgrep"
+
+[[adapter]]
+kind = "rust-analyzer"

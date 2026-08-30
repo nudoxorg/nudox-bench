@@ -1,0 +1,23 @@
+# The standard comparison: the shipped Nudox surface against the two tools an
+# agent already has.
+#
+# The Nudox endpoint is started by the Nudox host on an ephemeral loopback port
+# with a per-launch bearer token, so both are read from the environment rather
+# than committed here:
+#
+#   NUDOX_MCP_URL=http://127.0.0.1:PORT/mcp
+#   NUDOX_MCP_TOKEN=<launch token>
+#
+# See docs/RUNNING.md.
+name = "default"
+description = "Nudox (full surface) against ripgrep and rust-analyzer"
+
+[[adapter]]
+kind = "nudox"
+policy = "full"
+
+[[adapter]]
+kind = "ripgrep"
+
+[[adapter]]
+kind = "rust-analyzer"

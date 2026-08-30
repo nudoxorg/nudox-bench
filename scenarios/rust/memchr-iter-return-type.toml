@@ -1,0 +1,31 @@
+# src/memchr.rs:216 — pub fn memchr_iter<'h>(needle: u8, haystack: &'h [u8]) -> Memchr<'h>
+id = "rust/memchr/iter-return-type"
+family = "efficiency"
+task = "signature"
+question = "What type does `memchr::memchr_iter` return?"
+
+[target]
+ecosystem = "crates.io"
+package = "memchr"
+version = "2.8.3"
+root = "/home/leaf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/memchr-2.8.3"
+
+[probe]
+name = "memchr_iter"
+symbol = "memchr::memchr_iter"
+query = "memchr_iter"
+kind = "function"
+
+[truth]
+mode = "literal"
+all_of = ["Memchr"]
+none_of = ["Memchr2", "Memchr3"]
+
+[budget]
+max_tool_calls = 2
+token_budget = 800
+
+notes = """
+A one-word answer. The interesting number here is not whether a system finds it — all of them should — but what it spends doing so. The 800-token budget is roughly what the answer is worth; anything far above it is paying source-dump prices for a signature lookup.
+
+`none_of` holds the two sibling iterator types, so an adapter that answers by returning the whole iterator module is marked down rather than credited."""

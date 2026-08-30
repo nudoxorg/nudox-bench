@@ -1,0 +1,30 @@
+# Verified by reading requests 2.34.2 api.py: every verb helper delegates to
+# request() at lines 87, 99, 114, 134, 151, 168 and 180.
+id = "py/requests/callers-api-request"
+family = "polyglot"
+task = "callers"
+question = """
+In the requests library, which functions in `requests.api` delegate to `requests.api.request`?"""
+
+[target]
+ecosystem = "pypi"
+package = "requests"
+version = "2.34.2"
+root = "/usr/lib/python3.14/site-packages/requests"
+
+[probe]
+name = "request"
+symbol = "requests.api.request"
+query = "requests.api.request"
+kind = "function"
+
+[truth]
+mode = "symbol_set"
+all_of = ["get", "options", "head", "post", "put", "patch", "delete"]
+
+[budget]
+max_tool_calls = 4
+token_budget = 5000
+
+notes = """
+All seven verb helpers are one-line delegations, so this is the cleanest possible caller set in the corpus — no cfg gates, no initializers, no ambiguity. It is also the hardest for a text search, because `request` is a substring of `requests`, of `Request`, and of `request(` in every one of those helpers' own bodies."""

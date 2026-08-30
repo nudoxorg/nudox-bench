@@ -1,0 +1,32 @@
+# The re-export list at src/lib.rs:203-207 of memchr-2.8.3, verbatim.
+id = "rust/memchr/public-surface"
+family = "retrieval"
+task = "overview"
+question = "What does the memchr crate export at its root?"
+
+[target]
+ecosystem = "crates.io"
+package = "memchr"
+version = "2.8.3"
+root = "/home/leaf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/memchr-2.8.3"
+
+[probe]
+query = "memchr public exports"
+name = "memchr"
+
+[truth]
+mode = "symbol_set"
+all_of = [
+  "memchr", "memchr2", "memchr3",
+  "memchr_iter", "memchr2_iter", "memchr3_iter",
+  "memrchr", "memrchr2", "memrchr3",
+  "memrchr_iter", "memrchr2_iter", "memrchr3_iter",
+  "Memchr", "Memchr2", "Memchr3",
+]
+
+[budget]
+max_tool_calls = 3
+token_budget = 6000
+
+notes = """
+Fifteen names, all of them prefixes or suffixes of each other. This is the scenario where the strict/loose distinction does the least work — every name is a bare identifier — and where the word-boundary rule in the matcher does the most: `memchr` must not be credited by a line containing only `memchr3`."""

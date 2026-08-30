@@ -1,0 +1,31 @@
+# Verified by diffing the public declarations of src/map.rs between the two
+# checkouts: 0.17.1 adds four methods that 0.16.1 does not have.
+id = "rust/hashbrown/diff-0.16.1-to-0.17.1"
+family = "retrieval"
+task = "diff"
+question = """
+What public methods does hashbrown 0.17.1 add to `HashMap` that 0.16.1 did not have?"""
+
+[target]
+ecosystem = "crates.io"
+package = "hashbrown"
+version = "0.16.1"
+to_version = "0.17.1"
+root = "/home/leaf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hashbrown-0.17.1"
+
+[probe]
+query = "HashMap"
+name = "HashMap"
+
+[truth]
+mode = "symbol_set"
+all_of = ["insert_entry_with_key", "into_entry", "into_map", "replace_key"]
+
+[budget]
+max_tool_calls = 2
+token_budget = 8000
+
+notes = """
+This is the scenario neither baseline can attempt, and that is the point. ripgrep and rust-analyzer both answer about the checkout they were given; comparing two released versions requires a corpus that holds both at once. Both adapters decline it explicitly rather than scoring zero, so the report shows it as reach rather than as a win on points.
+
+Both versions must be loaded into the Nudox corpus for the `diff` tool to answer — see `--ensure-indexed` in docs/RUNNING.md."""

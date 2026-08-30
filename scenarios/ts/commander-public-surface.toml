@@ -1,0 +1,30 @@
+# The export list in commander 12.1.0 index.js, lines 7-24.
+id = "ts/commander/public-surface"
+family = "polyglot"
+task = "overview"
+question = "What does the commander npm package export from its entry point?"
+
+[target]
+ecosystem = "npm"
+package = "commander"
+version = "12.1.0"
+root = "/home/leaf/Dev/nudox/context-bench/node_modules/commander"
+
+[probe]
+query = "commander exports"
+name = "commander"
+
+[truth]
+mode = "symbol_set"
+all_of = [
+  "program", "createCommand", "createOption", "createArgument",
+  "Command", "Option", "Argument", "Help",
+  "CommanderError", "InvalidArgumentError",
+]
+
+[budget]
+max_tool_calls = 3
+token_budget = 5000
+
+notes = """
+`InvalidOptionArgumentError` is exported too, but as a deprecated alias of `InvalidArgumentError`; it is left out of all_of so that a tool which lists only live exports is not penalised."""

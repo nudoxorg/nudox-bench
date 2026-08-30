@@ -1,0 +1,30 @@
+# Signature read from src/memchr.rs:158-171 of memchr-2.8.3.
+id = "rust/memchr/signature-memchr3"
+family = "retrieval"
+task = "signature"
+question = """
+What is the exact signature of `memchr::memchr3` — how many needles does it take, in what order, and what does it return?"""
+
+[target]
+ecosystem = "crates.io"
+package = "memchr"
+version = "2.8.3"
+root = "/home/leaf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/memchr-2.8.3"
+
+[probe]
+name = "memchr3"
+symbol = "memchr::memchr3"
+query = "memchr3"
+kind = "function"
+
+[truth]
+mode = "literal"
+all_of = ["needle1", "needle2", "needle3", "haystack", "Option<usize>"]
+none_of = ["memrchr3"]
+
+[budget]
+max_tool_calls = 3
+token_budget = 2500
+
+notes = """
+`none_of` names the reverse-search variant. It is the confusion this question exists to catch: `memrchr3` has an identical parameter list and an adjacent definition, so any answer that surfaces both has not actually resolved which one was asked about."""

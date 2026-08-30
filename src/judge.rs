@@ -1,0 +1,272 @@
+//! The judge, for the scenarios that cannot be matched.
+//!
+//! # Scope, deliberately narrow
+//!
+//! Only [`Family::Implementation`] reaches a judge. Everything else has a
+//! recorded answer and is scored mechanically, which is the property that
+//! makes most of this benchmark re-runnable at no cost, with no API key, and
+//! with no run-to-run variance to explain away.
+//!
+//! # The protocol, and why it is context-bench's
+//!
+//! Three models vote independently on two booleans — is the returned context
+//! *complete* enough to implement the oracle, and is it *relevant* to the
+//! task — and a scenario passes only if both carry 2-of-3. That is the
+//! protocol `context-bench` used to produce the numbers this harness is meant
+//! to be readable against, so it is reproduced rather than improved on:
+//! changing the judging rule and the system under test at the same time would
+//! make the two sets of numbers incomparable, which is the whole reason for
+//! keeping it.
+//!
+//! What is judged is the *context*, not an implementation. No code is
+//! generated or run. The question is whether a competent developer handed
+//! this context could write the oracle — which is what a documentation-
+//! retrieval tool is actually responsible for.
+
+use anyhow::{bail, Context, Result};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+
+use crate::scenario::Scenario;
+
+/// The three voters. Kept as a constant rather than a config knob: a judge
+/// panel that changes between runs makes the runs incomparable, which is the
+/// one thing a benchmark may not do quietly.
+pub const PANEL: [&str; 3] = [
+    "openai/gpt-5",
+    "x-ai/grok-4",
+    "deepseek/deepseek-v3.2-exp",
+];
+
+/// One model's vote.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Vote {
+    pub model: String,
+    pub complete: bool,
+    pub relevant: bool,
+    /// 1–5 quality score, recorded but not part of the pass rule.
+    #[serde(default)]
+    pub score: u8,
+    #[serde(default)]
+    pub reasoning: String,
+}
+
+/// The panel's verdict.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct JudgeVerdict {
+    pub votes: Vec<Vote>,
+    pub complete: bool,
+    pub relevant: bool,
+    pub passed: bool,
+}
+
+impl JudgeVerdict {
+    /// 2-of-3 on both axes.
+    pub fn tally(votes: Vec<Vote>) -> Self {
+        let needed = votes.len().div_ceil(2).max(1);
+        let complete = votes.iter().filter(|v| v.complete).count() >= needed;
+        let relevant = votes.iter().filter(|v| v.relevant).count() >= needed;
+        Self {
+            complete,
+            relevant,
+            passed: complete && relevant,
+            votes,
+        }
+    }
+}
+
+/// An OpenRouter-backed judge.
+pub struct Judge {
+    client: reqwest::Client,
+    api_key: String,
+    base_url: String,
+}
+
+impl Judge {
+    /// Build a judge from `OPENROUTER_API_KEY`, or `None` if it is unset.
+    ///
+    /// Absence is not an error: a run with no key scores every matched
+    /// scenario as usual and reports the judged ones as not-run, which is a
+    /// perfectly useful run.
+    pub fn from_env() -> Option<Self> {
+        let api_key = std::env::var("OPENROUTER_API_KEY").ok()?;
+        if api_key.trim().is_empty() {
+            return None;
+        }
+        Some(Self {
+            client: reqwest::Client::new(),
+            api_key,
+            base_url: std::env::var("OPENROUTER_BASE_URL")
+                .unwrap_or_else(|_| "https://openrouter.ai/api/v1".into()),
+        })
+    }
+
+    /// Judge one attempt's context against the scenario's oracle.
+    pub async fn judge(&self, scenario: &Scenario, context: &str) -> Result<JudgeVerdict> {
+        let Some(oracle_path) = scenario.truth.oracle.as_ref() else {
+            bail!("{}: judged scenario has no oracle", scenario.id);
+        };
+        let oracle = std::fs::read_to_string(oracle_path)
+            .with_context(|| format!("reading oracle {}", oracle_path.display()))?;
+        let prompt = build_prompt(scenario, &oracle, context);
+
+        let mut votes = Vec::new();
+        for model in PANEL {
+            match self.ask(model, &prompt).await {
+                Ok(vote) => votes.push(vote),
+                // One unreachable model must not void the panel; a 2-of-2 is
+                // still a majority and is recorded as such.
+                Err(e) => tracing::warn!("judge {model} failed: {e}"),
+            }
+        }
+        if votes.is_empty() {
+            bail!("every judge model failed");
+        }
+        Ok(JudgeVerdict::tally(votes))
+    }
+
+    async fn ask(&self, model: &str, prompt: &str) -> Result<Vote> {
+        let body = json!({
+            "model": model,
+            "messages": [
+                { "role": "system", "content": SYSTEM_PROMPT },
+                { "role": "user", "content": prompt }
+            ],
+            "response_format": { "type": "json_object" },
+            "temperature": 0
+        });
+
+        let response = self
+            .client
+            .post(format!("{}/chat/completions", self.base_url))
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(&body)
+            .send()
+            .await?;
+        let status = response.status();
+        let text = response.text().await?;
+        if !status.is_success() {
+            bail!("{model}: HTTP {status}: {text}");
+        }
+        let value: Value = serde_json::from_str(&text)?;
+        let content = value
+            .pointer("/choices/0/message/content")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        parse_vote(model, content)
+    }
+}
+
+const SYSTEM_PROMPT: &str = "\
+You evaluate whether a block of retrieved context is sufficient for a developer to \
+implement a described task. You never write the implementation. Answer only with a \
+JSON object of the form \
+{\"complete\": bool, \"relevant\": bool, \"score\": 1-5, \"reasoning\": \"one or two sentences\"}.";
+
+fn build_prompt(scenario: &Scenario, oracle: &str, context: &str) -> String {
+    format!(
+        "# Task the developer was given\n\n{}\n\n\
+         # Oracle implementation (what a correct answer looks like)\n\n```\n{}\n```\n\n\
+         # Context that was retrieved for them\n\n```\n{}\n```\n\n\
+         # What to decide\n\n\
+         `complete`: could a competent developer write something functionally \
+         equivalent to the oracle from the retrieved context alone? API names, \
+         parameter types, return values and usage patterns must be inferable. \
+         Exact textual match with the oracle is NOT required — functional \
+         equivalence is enough.\n\
+         `relevant`: does the retrieved context address this task, rather than a \
+         neighbouring one?\n\
+         `score`: overall quality of the context, 1 to 5.",
+        scenario.question,
+        oracle.trim(),
+        context.trim()
+    )
+}
+
+/// Parse a vote out of a model's reply, tolerating a fenced JSON block.
+fn parse_vote(model: &str, content: &str) -> Result<Vote> {
+    let trimmed = content.trim();
+    let json_text = if let Some(start) = trimmed.find('{') {
+        let end = trimmed.rfind('}').map(|e| e + 1).unwrap_or(trimmed.len());
+        &trimmed[start..end]
+    } else {
+        trimmed
+    };
+    let value: Value = serde_json::from_str(json_text)
+        .with_context(|| format!("{model} did not answer with JSON: {trimmed}"))?;
+    Ok(Vote {
+        model: model.to_owned(),
+        complete: value
+            .get("complete")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        relevant: value
+            .get("relevant")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        score: value.get("score").and_then(Value::as_u64).unwrap_or(0) as u8,
+        reasoning: value
+            .get("reasoning")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn vote(complete: bool, relevant: bool) -> Vote {
+        Vote {
+            model: "m".into(),
+            complete,
+            relevant,
+            score: 3,
+            reasoning: String::new(),
+        }
+    }
+
+    #[test]
+    fn two_of_three_carries_both_axes() {
+        let verdict = JudgeVerdict::tally(vec![
+            vote(true, true),
+            vote(true, false),
+            vote(false, true),
+        ]);
+        assert!(verdict.complete);
+        assert!(verdict.relevant);
+        assert!(verdict.passed);
+    }
+
+    #[test]
+    fn one_axis_failing_sinks_the_verdict() {
+        let verdict = JudgeVerdict::tally(vec![
+            vote(true, false),
+            vote(true, false),
+            vote(false, true),
+        ]);
+        assert!(verdict.complete);
+        assert!(!verdict.relevant);
+        assert!(!verdict.passed, "both axes must carry");
+    }
+
+    #[test]
+    fn a_degraded_panel_still_needs_a_majority_of_those_that_voted() {
+        let verdict = JudgeVerdict::tally(vec![vote(true, true), vote(false, false)]);
+        assert!(verdict.passed, "1 of 2 is a majority by div_ceil");
+        let verdict = JudgeVerdict::tally(vec![vote(false, false), vote(false, false)]);
+        assert!(!verdict.passed);
+    }
+
+    #[test]
+    fn fenced_json_still_parses() {
+        let vote = parse_vote(
+            "m",
+            "```json\n{\"complete\": true, \"relevant\": true, \"score\": 4}\n```",
+        )
+        .expect("parses");
+        assert!(vote.complete && vote.relevant);
+        assert_eq!(vote.score, 4);
+    }
+}

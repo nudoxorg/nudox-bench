@@ -1,0 +1,29 @@
+# Nudox against itself. Every row is the same server under a different
+# client-side restriction, so the whole sweep costs one run and no rebuild.
+#
+# What each row is for is documented on `Policy` in src/adapter/nudox.rs.
+name = "ablations"
+description = "The five built-in Nudox policies, plus ripgrep as the floor"
+
+[[adapter]]
+kind = "nudox"
+policy = "full"
+
+[[adapter]]
+kind = "nudox"
+policy = "oneshot"
+
+[[adapter]]
+kind = "nudox"
+policy = "search-only"
+
+[[adapter]]
+kind = "nudox"
+policy = "graph-first"
+
+[[adapter]]
+kind = "nudox"
+policy = "keys"
+
+[[adapter]]
+kind = "ripgrep"
