@@ -1,0 +1,30 @@
+# Judged. Oracle written against github.com/google/uuid@v1.6.0's own
+# declarations: NewSHA1 (hash.go:57), NameSpaceDNS and Nil (hash.go:15,19),
+# NewRandom (version4.go:39), MustParse (uuid.go:166), Parse (uuid.go:68).
+id = "go/uuid/implement-namespaced-ids"
+family = "implementation"
+task = "implement"
+question = """
+Using github.com/google/uuid, write helpers that derive a deterministic UUID for a name inside a namespace, derive one under the well-known DNS namespace, generate a fresh random UUID returning an error rather than panicking, and parse a UUID from a string in both a panicking and an error-returning form."""
+
+[target]
+ecosystem = "go"
+package = "github.com/google/uuid"
+version = "v1.6.0"
+root = "/home/leaf/go/pkg/mod/github.com/google/uuid@v1.6.0"
+
+[probe]
+query = "uuid namespace SHA1 deterministic random parse"
+name = "NewSHA1"
+
+[truth]
+mode = "judged"
+oracle = "scenarios/oracles/uuid_namespaced_ids.go"
+sources = ["https://pkg.go.dev/github.com/google/uuid@v1.6.0"]
+
+[budget]
+max_tool_calls = 4
+token_budget = 8000
+
+notes = """
+Spans five declarations across three files, plus two package-level vars (`NameSpaceDNS`, `Nil`). Package-level constants are the part a symbol-search surface most often omits, which is what makes this worth judging rather than matching."""

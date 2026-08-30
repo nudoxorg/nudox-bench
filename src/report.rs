@@ -77,6 +77,10 @@ pub struct AdapterSummary {
     pub attempted: usize,
     pub passed: usize,
     pub unsupported: usize,
+    /// Scenarios that ran but cannot be scored — a judged scenario on a run
+    /// with no judge. Kept out of `attempted` so an unjudged implementation
+    /// scenario does not silently read as a failure.
+    pub unscored: usize,
     pub errored: usize,
     pub mean_strict_recall: f64,
     pub mean_loose_recall: f64,
@@ -149,6 +153,12 @@ impl RunReport {
                 entry.unsupported += 1;
                 continue;
             }
+            if outcome.passed().is_none() {
+                // Judged, with no verdict: the run had no judge. Its recall
+                // numbers are structurally zero and would poison the means.
+                entry.unscored += 1;
+                continue;
+            }
             entry.attempted += 1;
             if outcome.attempt.error.is_some() {
                 entry.errored += 1;
@@ -212,19 +222,20 @@ impl RunReport {
              them is how much of an adapter's apparent success is unresolved text.\n\n",
         );
         out.push_str(
-            "| adapter | pass | attempted | unsup. | strict | loose | gap | distractors | \
-             tok/scenario | tok/pass | calls |\n\
-             |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n",
+            "| adapter | pass | attempted | unsup. | unscored | strict | loose | gap | \
+             distractors | tok/scenario | tok/pass | calls |\n\
+             |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n",
         );
         for s in &summaries {
             out.push_str(&format!(
-                "| {} | {}/{} ({:.0}%) | {} | {} | {:.2} | {:.2} | {:.2} | {} | {:.0} | {} | {:.1} |\n",
+                "| {} | {}/{} ({:.0}%) | {} | {} | {} | {:.2} | {:.2} | {:.2} | {} | {:.0} | {} | {:.1} |\n",
                 s.adapter,
                 s.passed,
                 s.attempted,
                 s.pass_rate() * 100.0,
                 s.attempted,
                 s.unsupported,
+                s.unscored,
                 s.mean_strict_recall,
                 s.mean_loose_recall,
                 s.mean_resolution_gap,
@@ -271,7 +282,8 @@ impl RunReport {
                     .iter()
                     .find(|o| o.scenario_id == scenario && o.adapter == *adapter)
                     .map(|o| match o.passed() {
-                        None => "n/a".to_owned(),
+                        None if o.attempt.unsupported.is_some() => "n/a".to_owned(),
+                        None => "unscored".to_owned(),
                         Some(true) => format!("pass ({})", o.attempt.cost.marginal().cl100k),
                         Some(false) => format!(
                             "fail {:.0}% ({})",
@@ -389,6 +401,32 @@ mod tests {
         assert_eq!(summary.attempted, 1);
         assert_eq!(summary.unsupported, 1);
         assert_eq!(summary.pass_rate(), 1.0, "declining is not failing");
+    }
+
+    #[test]
+    fn an_unjudged_scenario_is_not_a_failure() {
+        let mut judged = outcome_for("a", false, false, 900);
+        judged.family = Family::Implementation;
+        judged.score.judged = true;
+        judged.score.strict_recall = 0.0;
+        let report = RunReport {
+            run_id: "r".into(),
+            timestamp: "t".into(),
+            adapters: vec![AdapterInfo {
+                name: "a".into(),
+                description: String::new(),
+                resident: TokenCount::default(),
+            }],
+            outcomes: vec![outcome_for("a", true, false, 100), judged],
+        };
+        let summary = &report.summarize()[0];
+        assert_eq!(summary.attempted, 1, "a judged scenario with no judge is not attempted");
+        assert_eq!(summary.unscored, 1);
+        assert_eq!(summary.pass_rate(), 1.0);
+        assert_eq!(
+            summary.mean_strict_recall, 1.0,
+            "a structurally-zero recall must not enter the mean"
+        );
     }
 
     #[test]

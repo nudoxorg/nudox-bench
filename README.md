@@ -59,6 +59,7 @@ Every run reports these per adapter. There is deliberately **no single score**
 |---|---|
 | `pass` | full strict recall, `any_of` satisfied, and no distractors |
 | `attempted` / `unsup.` | scenarios the adapter could express, and those it declined |
+| `unscored` | ran, but judged with no judge available |
 | `strict` | recall counting only fully-qualified matches |
 | `loose` | recall counting bare identifiers anywhere in the output |
 | `gap` | `loose − strict`: how much apparent success is unresolved text |
@@ -71,13 +72,17 @@ context before it is asked anything.
 
 ### Measured baseline numbers
 
-From `configs/baselines.toml` over the eight scenarios in this repo — real
+From `configs/baselines.toml` over the ten scenarios in this repo — real
 output, not an illustration:
 
-| adapter | pass | attempted | unsup. | strict | tok/scenario | tok/pass |
-|---|---:|---:|---:|---:|---:|---:|
-| ripgrep | 5/7 (71%) | 7 | 1 | 0.95 | 9,658 | 13,522 |
-| rust-analyzer | 1/4 (25%) | 4 | 4 | 0.35 | 306 | 1,226 |
+| adapter | pass | attempted | unsup. | unscored | strict | tok/scenario | tok/pass |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| ripgrep | 5/7 (71%) | 7 | 1 | 2 | 0.95 | 9,658 | 13,522 |
+| rust-analyzer | 1/4 (25%) | 4 | 5 | 1 | 0.35 | 306 | 1,226 |
+
+`unscored` is the two implementation scenarios, which need a judge; this run
+had no `OPENROUTER_API_KEY`. They are held out of the pass rate rather than
+counted as failures.
 
 Read that as the bar, not as a result about Nudox: **ripgrep answers most of
 these questions**, and the interesting column is what it spends doing so.

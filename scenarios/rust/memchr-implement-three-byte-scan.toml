@@ -1,0 +1,34 @@
+# Judged, not matched. The oracle was written against memchr 2.8.3's own
+# declarations (src/memchr.rs:256 memchr3_iter, :432 Memchr3, :158 memchr3,
+# and the DoubleEndedIterator promise documented at :253) — not against any
+# tool's output.
+id = "rust/memchr/implement-three-byte-scan"
+family = "implementation"
+task = "implement"
+question = """
+Using the memchr crate, write helpers that scan a byte slice for any of three needle bytes: return the first match, collect every match, split the slice on any of them, and find the last match by iterating in reverse. Name the iterator type explicitly in at least one signature."""
+
+[target]
+ecosystem = "crates.io"
+package = "memchr"
+version = "2.8.3"
+root = "/home/leaf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/memchr-2.8.3"
+
+[probe]
+query = "memchr three needle bytes iterator scan"
+name = "memchr3_iter"
+
+[truth]
+mode = "judged"
+oracle = "scenarios/oracles/memchr_three_byte_scan.rs"
+sources = [
+  "https://docs.rs/memchr/2.8.3/memchr/fn.memchr3_iter.html",
+  "https://docs.rs/memchr/2.8.3/memchr/struct.Memchr3.html",
+]
+
+[budget]
+max_tool_calls = 4
+token_budget = 8000
+
+notes = """
+Deliberately multi-faceted, in the spirit of context-bench's scenario design: the answer needs the free function, the iterator function, the iterator *type* by name, and the fact that it is double-ended. A tool that returns only the signature of `memchr3` has not supplied enough, and a judge should say so."""
