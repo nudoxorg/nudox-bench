@@ -8,7 +8,7 @@ question = "What does the memchr crate export at its root?"
 ecosystem = "crates.io"
 package = "memchr"
 version = "2.8.3"
-root = "/home/leaf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/memchr-2.8.3"
+root = "${CARGO_SRC}/memchr-2.8.3"
 
 [probe]
 query = "memchr public exports"

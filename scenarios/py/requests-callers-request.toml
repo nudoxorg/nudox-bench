@@ -10,7 +10,7 @@ In the requests library, which functions in `requests.api` delegate to `requests
 ecosystem = "pypi"
 package = "requests"
 version = "2.34.2"
-root = "/usr/lib/python3.14/site-packages/requests"
+root = "${PY_SITE}/requests"
 
 [probe]
 name = "request"

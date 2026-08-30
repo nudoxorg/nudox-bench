@@ -11,7 +11,7 @@ ecosystem = "crates.io"
 package = "hashbrown"
 version = "0.16.1"
 to_version = "0.17.1"
-root = "/home/leaf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hashbrown-0.17.1"
+root = "${CARGO_SRC}/hashbrown-0.17.1"
 
 [probe]
 query = "HashMap"

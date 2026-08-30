@@ -335,6 +335,124 @@ impl Scenario {
     }
 }
 
+/// Expand `~` and `${VAR}` in a path.
+///
+/// # Why scenario roots need this
+///
+/// A cargo registry checkout lives at
+/// `~/.cargo/registry/src/index.crates.io-<hash>/memchr-2.8.3`, and that hash
+/// is not stable across machines or cargo versions. A scenario that hard-codes
+/// one is a scenario only its author can run, which for a benchmark is the
+/// same as a scenario nobody can reproduce. So roots are written with
+/// variables — `${CARGO_SRC}/memchr-2.8.3` — and resolved here.
+///
+/// An unset variable is left untouched rather than expanded to nothing: a path
+/// containing a literal `${CARGO_SRC}` fails loudly at `root.exists()` with the
+/// name of what was missing still in the message, where expanding to `""`
+/// would silently produce `/memchr-2.8.3` and report a confusing absence.
+/// Well-known package caches this harness can find on its own.
+///
+/// These are the roots every scenario in this repo points at, and they live in
+/// a predictable place on a developer machine — but a place with a
+/// machine-specific component (cargo interposes a registry-index hash, Python
+/// a minor version). Resolving them here means the committed scenarios run
+/// unmodified on a machine that is not the author's, which is the difference
+/// between a benchmark and a demo.
+///
+/// An explicitly-set environment variable always wins, so a caller pointing at
+/// a vendored corpus is never overruled by a lucky guess.
+fn builtin_root(name: &str) -> Option<String> {
+    let home = std::env::var("HOME").ok()?;
+    match name {
+        // ~/.cargo/registry/src/<index-hash>/ — the hash varies with the
+        // registry protocol and cargo version, so it is globbed rather than
+        // spelled. Newest entry wins when several indexes are present.
+        "CARGO_SRC" => newest_child(&format!("{home}/.cargo/registry/src")),
+        "GO_MOD" => exists(format!("{home}/go/pkg/mod")),
+        // /usr/lib/python3.X/site-packages — highest version present.
+        "PY_SITE" => newest_child("/usr/lib")
+            .map(|dir| format!("{dir}/site-packages"))
+            .filter(|path| std::path::Path::new(path).is_dir())
+            .or_else(|| {
+                newest_matching("/usr/lib", "python")
+                    .map(|dir| format!("{dir}/site-packages"))
+                    .filter(|path| std::path::Path::new(path).is_dir())
+            }),
+        _ => None,
+    }
+}
+
+fn exists(path: String) -> Option<String> {
+    std::path::Path::new(&path).is_dir().then_some(path)
+}
+
+fn newest_child(dir: &str) -> Option<String> {
+    newest_matching(dir, "")
+}
+
+/// The lexically-greatest directory under `dir` whose name starts with
+/// `prefix`. Lexical order is the right tie-break for both cases here:
+/// `python3.14` sorts above `python3.13`, and any cargo index hash works.
+fn newest_matching(dir: &str, prefix: &str) -> Option<String> {
+    let mut best: Option<String> = None;
+    for entry in std::fs::read_dir(dir).ok()?.flatten() {
+        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !name.starts_with(prefix) {
+            continue;
+        }
+        let path = entry.path().to_string_lossy().into_owned();
+        if best.as_deref().is_none_or(|current| current < path.as_str()) {
+            best = Some(path);
+        }
+    }
+    best
+}
+
+pub fn expand_path(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let mut rest = raw;
+
+    if let Some(stripped) = rest.strip_prefix("~/") {
+        match std::env::var("HOME") {
+            Ok(home) => {
+                out.push_str(&home);
+                out.push('/');
+                rest = stripped;
+            }
+            Err(_) => {}
+        }
+    }
+
+    while let Some(start) = rest.find("${") {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 2..];
+        match after.find('}') {
+            Some(end) => {
+                let name = &after[..end];
+                match std::env::var(name).ok().or_else(|| builtin_root(name)) {
+                    Some(value) => out.push_str(&value),
+                    // Left verbatim on purpose — see the doc comment.
+                    None => {
+                        out.push_str("${");
+                        out.push_str(name);
+                        out.push('}');
+                    }
+                }
+                rest = &after[end + 1..];
+            }
+            None => {
+                out.push_str(&rest[start..]);
+                rest = "";
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Load every `*.toml` under `dir`, recursively.
 pub fn load_dir(dir: &Path) -> anyhow::Result<Vec<Scenario>> {
     let mut out = Vec::new();
@@ -351,6 +469,10 @@ pub fn load_dir(dir: &Path) -> anyhow::Result<Vec<Scenario>> {
         let mut scenario: Scenario = toml::from_str(&text)
             .map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?;
         scenario.source_path = path.to_path_buf();
+        if let Some(root) = scenario.target.root.take() {
+            let expanded = expand_path(&root.to_string_lossy());
+            scenario.target.root = Some(PathBuf::from(expanded));
+        }
         if let Err(problem) = scenario.validate() {
             problems.push(problem);
             continue;
@@ -362,4 +484,60 @@ pub fn load_dir(dir: &Path) -> anyhow::Result<Vec<Scenario>> {
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tilde_and_variables_expand() {
+        std::env::set_var("NBENCH_TEST_ROOT", "/opt/pkgs");
+        assert_eq!(
+            expand_path("${NBENCH_TEST_ROOT}/memchr-2.8.3"),
+            "/opt/pkgs/memchr-2.8.3"
+        );
+    }
+
+    #[test]
+    fn an_unset_variable_is_left_verbatim() {
+        // Expanding to "" would turn this into "/memchr-2.8.3", which exists
+        // nowhere and names nothing — the failure would not say what was
+        // missing.
+        let expanded = expand_path("${NBENCH_DEFINITELY_UNSET}/memchr-2.8.3");
+        assert!(
+            expanded.contains("NBENCH_DEFINITELY_UNSET"),
+            "the missing variable must survive into the error path: {expanded}"
+        );
+    }
+
+    #[test]
+    fn a_plain_path_is_unchanged() {
+        assert_eq!(expand_path("/usr/lib/python3.14/site-packages/requests"),
+                   "/usr/lib/python3.14/site-packages/requests");
+    }
+
+    #[test]
+    fn multiple_variables_in_one_path() {
+        std::env::set_var("NBENCH_A", "/a");
+        std::env::set_var("NBENCH_B", "b");
+        assert_eq!(expand_path("${NBENCH_A}/x/${NBENCH_B}"), "/a/x/b");
+    }
+}
+
+#[cfg(test)]
+mod builtin_tests {
+    use super::*;
+
+    #[test]
+    fn an_explicit_variable_beats_the_builtin_guess() {
+        std::env::set_var("CARGO_SRC", "/vendored/corpus");
+        assert_eq!(expand_path("${CARGO_SRC}/memchr-2.8.3"), "/vendored/corpus/memchr-2.8.3");
+        std::env::remove_var("CARGO_SRC");
+    }
+
+    #[test]
+    fn unknown_names_have_no_builtin() {
+        assert_eq!(builtin_root("NOT_A_KNOWN_ROOT"), None);
+    }
 }

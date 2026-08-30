@@ -8,7 +8,7 @@ question = "What type does `memchr::memchr_iter` return?"
 ecosystem = "crates.io"
 package = "memchr"
 version = "2.8.3"
-root = "/home/leaf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/memchr-2.8.3"
+root = "${CARGO_SRC}/memchr-2.8.3"
 
 [probe]
 name = "memchr_iter"

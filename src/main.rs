@@ -57,11 +57,45 @@ enum Command {
         #[arg(long)]
         per_tool: bool,
     },
+    /// Check that everything a run needs is actually present.
+    ///
+    /// Reports, per scenario, whether its package root resolved on this
+    /// machine; whether `rg` and rust-analyzer are real binaries rather than
+    /// a rustup shim; and whether the Nudox endpoint answers. Exits non-zero
+    /// if anything a run would need is missing, so it works in CI.
+    Doctor {
+        #[arg(long, default_value = "scenarios")]
+        scenarios: PathBuf,
+        /// Also try the Nudox endpoint.
+        #[arg(long, env = "NUDOX_MCP_URL")]
+        url: Option<String>,
+        #[arg(long, env = "NUDOX_MCP_TOKEN")]
+        token: Option<String>,
+    },
     /// Load and validate every scenario, then list them.
     List {
         #[arg(long, default_value = "scenarios")]
         scenarios: PathBuf,
     },
+}
+
+/// Run `bin args…` and return its first line of output, or `None` if it
+/// cannot be run at all.
+///
+/// Checking that the binary *answers* rather than merely exists is the point:
+/// `rustup` puts a shim named `rust-analyzer` on PATH whether or not the
+/// component is installed, so `which` succeeds where spawning fails.
+async fn which_ok(bin: &str, args: &[&str]) -> Option<String> {
+    let output = tokio::process::Command::new(bin)
+        .args(args)
+        .output()
+        .await
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    Some(text.lines().next().unwrap_or("").trim().to_owned())
 }
 
 #[tokio::main]
@@ -160,6 +194,121 @@ async fn main() -> Result<()> {
                     );
                 }
             }
+        }
+
+        Command::Doctor {
+            scenarios: scenario_dir,
+            url,
+            token,
+        } => {
+            let mut problems = 0usize;
+
+            println!("scenarios");
+            let scenarios = scenario::load_dir(&scenario_dir)?;
+            println!("  {} load and validate", scenarios.len());
+
+            println!("\npackage roots");
+            let mut seen: Vec<(String, bool)> = Vec::new();
+            for scenario in &scenarios {
+                let Some(root) = &scenario.target.root else {
+                    continue;
+                };
+                let rendered = root.display().to_string();
+                if seen.iter().any(|(path, _)| *path == rendered) {
+                    continue;
+                }
+                let present = root.is_dir();
+                seen.push((rendered.clone(), present));
+                if present {
+                    println!("  ok      {rendered}");
+                } else {
+                    problems += 1;
+                    // An unexpanded ${VAR} survives into this message on
+                    // purpose, so the fix is visible in the failure.
+                    println!("  MISSING {rendered}");
+                }
+            }
+            let unresolved: Vec<&str> = seen
+                .iter()
+                .filter(|(_, present)| !present)
+                .map(|(path, _)| path.as_str())
+                .filter(|path| path.contains("${"))
+                .collect();
+            if !unresolved.is_empty() {
+                println!(
+                    "\n  Set the named variable(s), e.g.:\n    \
+                     export NODE_MODULES=/path/to/node_modules"
+                );
+            }
+
+            println!("\nbaseline tools");
+            match which_ok("rg", &["--version"]).await {
+                Some(version) => println!("  ok      rg — {version}"),
+                None => {
+                    problems += 1;
+                    println!("  MISSING rg (ripgrep) is not runnable");
+                }
+            }
+            let ra = std::env::var("RUST_ANALYZER_BIN")
+                .unwrap_or_else(|_| "rust-analyzer".to_owned());
+            match which_ok(&ra, &["--version"]).await {
+                Some(version) => println!("  ok      rust-analyzer — {version}"),
+                None => {
+                    problems += 1;
+                    println!(
+                        "  MISSING `{ra}` is not runnable.\n          \
+                         rustup installs a shim that fails when the component is absent:\n          \
+                         rustup component add rust-analyzer\n          \
+                         or export RUST_ANALYZER_BIN=/path/to/rust-analyzer"
+                    );
+                }
+            }
+
+            println!("\nnudox endpoint");
+            match url {
+                None => println!(
+                    "  skipped — set NUDOX_MCP_URL to check it\n            \
+                     (start one with: cd endpoint && cargo run --release)"
+                ),
+                Some(url) => {
+                    match McpClient::connect(McpTransport::Http {
+                        url: url.clone(),
+                        token,
+                    })
+                    .await
+                    {
+                        Ok(client) => {
+                            let resident = client.resident_cost();
+                            println!(
+                                "  ok      {} — {} tools, {} cl100k resident",
+                                client.server_name(),
+                                client.tools().len(),
+                                resident.cl100k
+                            );
+                        }
+                        Err(e) => {
+                            problems += 1;
+                            println!("  FAILED  {url}: {e:#}");
+                        }
+                    }
+                }
+            }
+
+            println!("\njudge");
+            if std::env::var("OPENROUTER_API_KEY").is_ok() {
+                println!("  ok      OPENROUTER_API_KEY is set; --judge will run");
+            } else {
+                println!(
+                    "  absent  OPENROUTER_API_KEY unset — implementation scenarios \
+                     report as `unscored`, which is not a failure"
+                );
+            }
+
+            if problems > 0 {
+                println!("\n{problems} problem(s). A run will still work for whatever is ok above.");
+                std::process::exit(1);
+            }
+            println!("\nall good.");
         }
 
         Command::List {

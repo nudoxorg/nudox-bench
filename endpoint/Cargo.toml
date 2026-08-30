@@ -1,0 +1,46 @@
+[package]
+name = "nudox-endpoint"
+version = "0.1.0"
+edition = "2021"
+description = "Starts a Nudox MCP endpoint and prints its URL and launch token"
+publish = false
+
+# Standalone package with its own lockfile — deliberately NOT a member of
+# either this repo's or the Backend Cargo workspace.
+#
+# Backend's workspace includes `workspace/compiler/sandbox`, which depends on
+# `smolvm` by git, whose `libkrun` submodule is fetched over SSH from a private
+# repo. Cargo resolves the whole workspace before building any member, so
+# `cargo check -p nudox-engine` inside Backend fails at resolution with
+# "failed to authenticate when downloading repository" — nothing to do with
+# nudox-engine, which has no git dependencies at all.
+#
+# Standing outside the workspace means cargo resolves only what nudox-engine
+# actually needs. This is the same trick `lindsey` uses for the opposite
+# reason (keeping gpui out of the backend graph).
+[workspace]
+
+[[bin]]
+name = "nudox-endpoint"
+path = "src/main.rs"
+
+[dependencies]
+# `default-features = false` drops `local-persistence`, which gates `ir-vcs` —
+# the libpijul/iroh/sanakirja-linked IR patch engine. Two reasons:
+#
+# * It is not needed here. That feature makes produced IR survive a process
+#   restart; a benchmark endpoint indexes its packages at start-up every time,
+#   so there is nothing to persist between runs.
+# * It does not build outside Backend's workspace. `ir-vcs` uses
+#   `libpijul::nudox_f1`, which exists only in the vendored fork supplied by
+#   Backend's root `[patch.crates-io]`. A standalone package does not inherit
+#   a patch table, so the alternative to switching the feature off is
+#   replicating that table and its vendored paths here — carrying a copy of
+#   someone else's build configuration that would rot silently.
+#
+# The cost is that every start re-runs the producers. For the corpus this
+# benchmark uses that is tens of seconds.
+nudox-engine = { path = "../../Backend/workspace/nudox-engine", default-features = false }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "time"] }
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }

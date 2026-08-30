@@ -2,3 +2,4 @@
 /runs
 .env
 *.log
+endpoint/target/

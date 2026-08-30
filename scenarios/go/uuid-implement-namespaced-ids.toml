@@ -11,7 +11,7 @@ Using github.com/google/uuid, write helpers that derive a deterministic UUID for
 ecosystem = "go"
 package = "github.com/google/uuid"
 version = "v1.6.0"
-root = "/home/leaf/go/pkg/mod/github.com/google/uuid@v1.6.0"
+root = "${GO_MOD}/github.com/google/uuid@v1.6.0"
 
 [probe]
 query = "uuid namespace SHA1 deterministic random parse"

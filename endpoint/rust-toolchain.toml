@@ -1,0 +1,6 @@
+# Backend uses `#![feature(...)]`, so it only builds on nightly. The Backend
+# checkout has no rust-toolchain.toml of its own — its nix devshell supplies
+# the toolchain — so this package pins one explicitly. It is scoped to this
+# directory: the benchmark harness itself builds on stable and stays there.
+[toolchain]
+channel = "nightly"

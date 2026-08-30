@@ -1,105 +1,206 @@
-# Running against a live Nudox endpoint
+# Running it
 
-## Where the URL and token come from
+Three things to know before the commands: what needs no setup, what the
+endpoint is, and why the endpoint binary exists.
 
-Nudox's MCP server is **not a standalone binary**. It is started inside the
-`lindsey` GUI process by `McpHost::start`
-(`Backend/workspace/nudox-engine/src/mcp/host.rs`), and it is:
+---
 
-* **streamable HTTP, never stdio** — the host is a GUI process and does not
-  own its stdin/stdout, so a stdio transport would corrupt both
-  (`endpoint.rs`, "Why streamable HTTP and not stdio");
-* **loopback only** — `LOOPBACK_BIND` is a constant and every branch of
-  `preferred_bind` hard-codes `127.0.0.1`;
-* **on an ephemeral port** — so two windows on one machine cannot collide, or
-  worse, silently attach an agent to the other window's corpus. A remembered
-  port is reused when it is free;
-* **token-gated** — a per-launch token, enforced in a layer *in front of* the
-  MCP router, so an unauthenticated request is rejected before a session is
-  allocated.
+## 1. The part that needs nothing
 
-Both values are therefore inputs to this harness rather than something it can
-discover. The running host exposes them:
-
-* `McpEndpoint::url()` → `http://127.0.0.1:<port>/mcp`
-* `McpEndpoint::client_config_snippet()` → the JSON shown in the GUI under
-  **Settings → Connection**, which carries the `Authorization: Bearer …`
-  header value.
+The baselines run offline, with no endpoint, no API key and no network:
 
 ```bash
-export NUDOX_MCP_URL='http://127.0.0.1:PORT/mcp'
-export NUDOX_MCP_TOKEN='<launch token>'
+cargo run --bin nbench -- doctor      # check the machine is ready
+cargo run --bin nbench -- run --config configs/baselines.toml
 ```
 
-Because the token is minted fresh per launch, it is a credential and is read
-from the environment — configs name the variable, never the value.
+`doctor` is the fastest way to see what is and is not set up. It reports every
+scenario's package root, whether `rg` and rust-analyzer actually *run* (not
+just whether they exist on `PATH` — see below), whether the Nudox endpoint
+answers, and whether a judge key is present. It exits non-zero if a run would
+be degraded, so it works in CI.
 
-## Check the connection first
+### Package roots
+
+Scenarios point at packages already on your machine, written with variables so
+the committed files are portable:
+
+| variable | resolved automatically from | used by |
+|---|---|---|
+| `${CARGO_SRC}` | `~/.cargo/registry/src/<index-hash>/` | memchr, hashbrown |
+| `${GO_MOD}` | `~/go/pkg/mod` | google/uuid |
+| `${PY_SITE}` | `/usr/lib/python3.X/site-packages` | requests |
+| `${NODE_MODULES}` | **not guessable — set it yourself** | commander |
+
+```bash
+export NODE_MODULES=/path/to/some/node_modules
+```
+
+An unset variable is left in the path verbatim, so `doctor` shows you
+`MISSING ${NODE_MODULES}/commander` rather than a confusing `/commander`.
+
+### rust-analyzer
+
+`rustup` puts a **shim** named `rust-analyzer` on `PATH` whether or not the
+component is installed for the active toolchain. The shim exits with
+`Unknown binary` — so `which` succeeds and spawning fails, which is why
+`doctor` runs it rather than looking for it.
+
+```bash
+rustup component add rust-analyzer
+# or point at one you have:
+export RUST_ANALYZER_BIN=~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/rust-analyzer
+```
+
+---
+
+## 2. Getting a Nudox endpoint
+
+Nudox's MCP server is **not a standalone binary**. It is started inside the
+`lindsey` GUI process by `McpHost::start`, and it is streamable-HTTP only
+(the GUI does not own its stdin/stdout), loopback only, on an ephemeral port,
+gated by a bearer token minted fresh each launch.
+
+A benchmark cannot drive a GUI, so this repo ships the missing piece:
+`endpoint/` — a small standalone binary that builds an engine over the package
+roots you name, starts the same `McpEndpoint` the GUI starts, and prints its
+URL and token.
+
+### Build it once
+
+```bash
+cd endpoint          # NOT from the repo root — see the note below
+cargo build --release
+```
+
+Two things about that build:
+
+* **It must be run from inside `endpoint/`.** `rustup` resolves
+  `rust-toolchain.toml` from the *working directory*, not from
+  `--manifest-path`. Backend uses `#![feature(...)]` and needs nightly;
+  the harness itself is stable and stays that way. Running
+  `cargo build --manifest-path endpoint/Cargo.toml` from the repo root picks
+  up the root's stable pin and fails with
+  `` `#![feature]` may not be used on the stable release channel ``.
+* **It is slow the first time** — it compiles `nudox-engine` and its
+  dependency graph (`ra_ap_*`, pyrefly, ONNX runtime). Budget 20–40 minutes.
+  Use `--release`: a debug build indexes packages several times slower, and
+  indexing is what you wait on at every start.
+
+It does **not** need the nix devshell, and it does not need `clang`. See
+"Why this builds outside nix" below.
+
+### Start it
+
+```bash
+cd endpoint
+./target/release/nudox-endpoint \
+  --package "$HOME/.cargo/registry/src"/*/memchr-2.8.3 \
+  --package "$HOME/.cargo/registry/src"/*/hashbrown-0.17.1
+```
+
+Name, version and language are read from the manifest in each directory, so a
+bare path is enough — the same rule the `index` tool follows for a path
+target. Override with `PATH=name@version` if the directory name lies.
+
+It prints:
+
+```
+NUDOX_MCP_URL=http://127.0.0.1:41337/mcp
+NUDOX_MCP_TOKEN=…
+```
+
+and stays up until Ctrl-C. Indexing runs a real compiler front end, so
+start-up is tens of seconds per package.
+
+### Point the benchmark at it
+
+In another shell:
+
+```bash
+export NUDOX_MCP_URL=http://127.0.0.1:41337/mcp
+export NUDOX_MCP_TOKEN=…
+
+cargo run --bin nbench -- surface --per-tool          # sanity check + cost table
+cargo run --bin nbench -- run --config configs/default.toml
+cargo run --bin nbench -- run --config configs/ablations.toml
+```
+
+Or in one step, with `--export`:
+
+```bash
+eval "$(cd endpoint && ./target/release/nudox-endpoint --package … --export)"
+```
+
+---
+
+## 3. `surface`: the cheapest useful command
 
 ```bash
 cargo run --bin nbench -- surface --per-tool
 ```
 
-This performs the MCP handshake, lists the tools, and prints what the surface
-costs an agent before any question — the number
-`Backend/docs/MCP-SURFACE-PLAN.md` §1.1 tracks. If the token is wrong you get
-an explicit 401 message rather than a decode failure.
+Handshakes, lists the tools, and prints what the surface costs an agent
+*before it asks anything* — every tool description plus every argument-schema
+description, under both `cl100k_base` and `o200k_base`.
 
-It is also the cheapest regression test for the surface work: §1.1 measured
-the pre-consolidation 13-tool surface at **3,875 cl100k tokens** resident.
-The surface has since consolidated to nine tools (`search`, `read`, `refs`,
-`packages`, `select_version`, `diff`, `index`, `graph`, `schema`); this command
-says what it costs now.
+This is a direct regression test for `Backend/docs/MCP-SURFACE-PLAN.md` §1.1,
+which measured the pre-consolidation 13-tool surface at **3,875 cl100k tokens**
+resident. The surface has since consolidated to nine tools (`search`, `read`,
+`refs`, `packages`, `select_version`, `diff`, `index`, `graph`, `schema`);
+this command says what it costs now, per tool, largest first.
 
-## Version skew, and `--ensure-indexed`
+---
 
-The file-based adapters read `target.root` — a checkout on this machine.
-Nudox answers from its own corpus. If those hold different versions of the
-same package, the run measures the skew rather than the tools.
+## 4. Version skew, and `--ensure-indexed`
 
-`--ensure-indexed` closes that: Nudox's `index` tool accepts a **filesystem
-path** as a target, so the harness indexes the very roots `ripgrep` and
-rust-analyzer read.
+The file-based adapters read `target.root`. Nudox answers from its corpus. If
+those hold different versions of the same package, the run measures the skew
+rather than the tools.
+
+`--ensure-indexed` closes it: Nudox's `index` tool accepts a **filesystem
+path**, so the harness indexes the very roots `ripgrep` and rust-analyzer
+read.
 
 ```bash
 cargo run --bin nbench -- run --config configs/default.toml --ensure-indexed
 ```
 
-It is off by default because indexing runs a real compiler front end — seconds
-to minutes per package. `index` also returns `running` rather than failing
-when its deadline expires, so the preflight logs the whole response instead of
-inventing a verdict the tool did not give.
+Off by default because indexing costs seconds to minutes per package. If you
+already started the endpoint with `--package` for those same roots, you do not
+need it.
 
-## rust-analyzer
+---
 
-`rustup` puts a **shim** named `rust-analyzer` on `PATH` whether or not the
-component is installed for the active toolchain. The shim exits with
-`Unknown binary` — so `which rust-analyzer` succeeds and spawning it fails.
-Either install the component, or name the real binary:
+## Why this builds outside nix
 
-```bash
-rustup component add rust-analyzer
-# or
-export RUST_ANALYZER_BIN=~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/rust-analyzer
-```
+Worth recording, because the obvious paths all fail and the reasons are not
+what they look like.
 
-## Status
+* **`nix develop Backend` fails.** The `smolvm` derivation builds for ~13
+  minutes and dies at `install: cannot stat 'target/release/smolvm'`. But
+  smolvm is only the launcher for opt-in sandbox VM tests — nothing
+  `nudox-engine` needs.
+* **`cargo check -p nudox-engine` inside Backend also fails**, and not because
+  of a linker. Backend's workspace includes `workspace/compiler/sandbox`,
+  which depends on `smolvm` by git, whose `libkrun` submodule is fetched over
+  SSH from a private repo. Cargo resolves the *whole workspace* before
+  building any member, so resolution dies with "failed to authenticate when
+  downloading repository". `nudox-engine` itself has **no git dependencies at
+  all**.
+* **There is no `.cargo/config.toml`** in Backend, so the often-repeated
+  "Backend needs clang as its linker" is no longer true. `clang` is not
+  installed on this machine and the endpoint builds anyway.
 
-The Nudox adapter compiles and is wired end to end, but **has not been run
-against a live endpoint yet**. Two things are in the way, neither of them in
-this repo:
+So `endpoint/` is a standalone package — its own `[workspace]`, its own
+lockfile — which makes cargo resolve only what `nudox-engine` actually needs.
+It is the same trick `lindsey` uses for the opposite reason (keeping gpui out
+of the backend graph).
 
-1. **No standalone server.** Bringing up an endpoint means running the GUI
-   host, or writing a small binary that calls `McpEndpoint::start` and prints
-   its URL and token. The latter is a few dozen lines and would make this
-   benchmark runnable in CI; it belongs in `Backend`, not here.
-2. **The Backend nix devshell currently fails to build.** `nix develop
-   Backend` dies in the `smolvm` derivation:
-   `install: cannot stat 'target/release/smolvm': No such file or directory`,
-   after a 13-minute release build. Until that is fixed, `nudox-engine` cannot
-   be built through the flake that supplies its `clang` linker.
-
-This is exactly why the harness talks to the endpoint **over the wire** rather
-than linking `nudox-engine`: the benchmark builds in about ten seconds and
-stays runnable while the Backend build is broken. When an endpoint is
-available, `configs/default.toml` and `configs/ablations.toml` run unchanged.
+One more thing was needed: `nudox-engine`'s default `local-persistence`
+feature gates `ir-vcs`, which uses `libpijul::nudox_f1` — a symbol that exists
+only in the vendored fork supplied by Backend's root `[patch.crates-io]`, and
+a standalone package inherits no patch table. That feature makes produced IR
+survive a restart, which a benchmark that re-indexes at every start does not
+need, so `endpoint/Cargo.toml` sets `default-features = false` rather than
+carrying a copy of someone else's vendored build configuration.

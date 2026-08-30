@@ -25,28 +25,42 @@ with no API key, and gives the same answer every time.**
 
 ## Quick start
 
-Nothing below needs a Nudox endpoint. This is the floor every Nudox number is
-read against, and it is the fastest way to check the harness works:
+Check the machine first — this tells you exactly what is and is not set up:
+
+```bash
+cargo run --bin nbench -- doctor
+```
+
+Then run the baselines. These need no Nudox endpoint, no API key and no
+network, and they are the floor every Nudox number is read against:
 
 ```bash
 cargo run --bin nbench -- run --config configs/baselines.toml
 ```
 
-To see what a live Nudox surface costs before it is asked anything:
+For the Nudox comparison you need a running endpoint. Nudox has no standalone
+server — its MCP endpoint lives inside the `lindsey` GUI — so this repo ships
+the missing piece in [`endpoint/`](endpoint):
 
 ```bash
-NUDOX_MCP_URL=http://127.0.0.1:PORT/mcp NUDOX_MCP_TOKEN=… \
-  cargo run --bin nbench -- surface --per-tool
+cd endpoint && cargo build --release          # once; ~20-40 min, needs nightly
+./target/release/nudox-endpoint --package "$HOME/.cargo/registry/src"/*/memchr-2.8.3
+# prints NUDOX_MCP_URL and NUDOX_MCP_TOKEN, stays up until Ctrl-C
 ```
 
-To run the full comparison, and then the ablation sweep:
+Then, in another shell:
 
 ```bash
-cargo run --bin nbench -- run --config configs/default.toml   --ensure-indexed
-cargo run --bin nbench -- run --config configs/ablations.toml --ensure-indexed
+export NUDOX_MCP_URL=…  NUDOX_MCP_TOKEN=…
+cargo run --bin nbench -- surface --per-tool        # what the surface costs, per tool
+cargo run --bin nbench -- run --config configs/default.toml
+cargo run --bin nbench -- run --config configs/ablations.toml
 ```
 
-See [docs/RUNNING.md](docs/RUNNING.md) for where the URL and token come from.
+[docs/RUNNING.md](docs/RUNNING.md) has the full walkthrough, including the two
+non-obvious build traps (the toolchain is resolved from your *working
+directory*, and Backend's workspace — not `nudox-engine` — is what fails to
+resolve inside nix).
 
 ---
 
@@ -125,7 +139,9 @@ See [docs/SCENARIOS.md](docs/SCENARIOS.md).
 
 ## Status
 
-Working and producing numbers for the `ripgrep` and rust-analyzer adapters.
-The Nudox adapter is written and compiles but **has not yet been run against a
-live endpoint** — see [docs/RUNNING.md](docs/RUNNING.md#status) for what that
-needs and what is currently in the way.
+* **Baselines** — working, producing the numbers above.
+* **`endpoint/`** — builds and starts a real MCP endpoint over a real indexed
+  package, outside nix, without `clang`.
+* **The Nudox adapter** — written, compiles, wired end to end; the full
+  comparison run is the next thing to do once an endpoint has finished
+  indexing.

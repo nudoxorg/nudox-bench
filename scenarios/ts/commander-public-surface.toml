@@ -8,7 +8,7 @@ question = "What does the commander npm package export from its entry point?"
 ecosystem = "npm"
 package = "commander"
 version = "12.1.0"
-root = "/home/leaf/Dev/nudox/context-bench/node_modules/commander"
+root = "${NODE_MODULES}/commander"
 
 [probe]
 query = "commander exports"
