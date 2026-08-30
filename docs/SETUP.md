@@ -254,8 +254,17 @@ export NUDOX_EMBED_MODEL_DIR=/path/to/jina-embeddings-v2-base-code
 cd endpoint && ./target/release/nudox-endpoint --package …
 ```
 
-The directory must contain the fp32 `jinaai/jina-embeddings-v2-base-code`
-artifact and its four tokenizer sidecars:
+**Backend already pins this model in nix**, so on a machine that has built
+Backend it is on disk and needs no download:
+
+```bash
+ls -d /nix/store/*-nudox-semantic-model-jina-code-v2
+export NUDOX_EMBED_MODEL_DIR=$(ls -d /nix/store/*-nudox-semantic-model-jina-code-v2 | head -1)
+```
+
+Otherwise the directory must contain the fp32
+`jinaai/jina-embeddings-v2-base-code` artifact and its four tokenizer
+sidecars:
 
 ```
 model.onnx                 # 641,517,466 bytes; sha256 pinned and verified before it reaches ort
@@ -342,7 +351,7 @@ cd endpoint && cargo build --release && cd ..
 cd ../Backend/workspace/compiler/languages/oracle/go && go build -o nudox-go-oracle ./... && cd -
 
 # every session
-export NUDOX_EMBED_MODEL_DIR=/path/to/jina-embeddings-v2-base-code
+export NUDOX_EMBED_MODEL_DIR=$(ls -d /nix/store/*-nudox-semantic-model-jina-code-v2 | head -1)
 export NUDOX_GO_ORACLE_BIN=/path/to/nudox-go-oracle
 export OPENROUTER_API_KEY=sk-or-…
 export NODE_MODULES=/path/to/node_modules
@@ -436,6 +445,7 @@ There is deliberately no single headline score — see
 |---|---|---|
 | `` `#![feature]` may not be used on the stable release channel `` | built the endpoint from the repo root | `cd endpoint` first — the toolchain is resolved from the working directory |
 | `failed to authenticate when downloading repository` | building `nudox-engine` from inside Backend's workspace | build via `endpoint/`, which stands outside that workspace |
+| `could not compile pyrefly … (signal: 9, SIGKILL)` | the OOM killer — `pyrefly` and `ra_ap_*` are large, and `-C opt-level=3` codegen holds a lot per job | `cargo build --release -j 2`, and stop any running endpoint first (it holds an indexed corpus in memory) |
 | `no such file or directory: ../../Backend/...` | Backend is not a sibling, or you are in a git worktree | put the checkouts side by side; build from the main checkout |
 | `MISSING ${NODE_MODULES}/commander` | the variable is unset and survived into the path verbatim | `export NODE_MODULES=…` |
 | `MISSING rust-analyzer is not runnable` | the rustup shim exists but the component does not | `rustup component add rust-analyzer`, or set `RUST_ANALYZER_BIN` |
