@@ -1,0 +1,1305 @@
+<title>The Nudox-Bench Protocol</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+:root {
+  color-scheme: light;
+
+  --ground:     #f4f4f1;
+  --plate:      #fcfcfb;
+  --sunk:       #eceae4;
+  --ink:        #0b0b0b;
+  --ink-2:      #52514e;
+  --ink-3:      #898781;
+  --rule:       #e1e0d9;
+  --rule-2:     #c8c6bd;
+
+  --accent:     #1c5cab;
+  --accent-mk:  #2a78d6;
+  --s-nudox:    #2a78d6;
+  --s-rg:       #eb6834;
+  --s-ra:       #1baf7a;
+  --s-dim:      #86b6ef;
+
+  --good:       #006300;
+  --good-bg:    #e6f2e6;
+  --warn:       #8a5a00;
+  --warn-bg:    #f8efd9;
+  --crit:       #b02f2f;
+  --crit-bg:    #f8e6e6;
+  --grid:       #e1e0d9;
+
+  --measure: 66ch;
+  --f-xs:  0.735rem;
+  --f-sm:  0.84rem;
+  --f-0:   1.0rem;
+  --f-1:   1.19rem;
+  --f-2:   1.5rem;
+  --f-3:   2.0rem;
+  --f-4:   2.9rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ground:   #0d0d0d;
+    --plate:    #1a1a19;
+    --sunk:     #131312;
+    --ink:      #f7f7f5;
+    --ink-2:    #c3c2b7;
+    --ink-3:    #898781;
+    --rule:     #2c2c2a;
+    --rule-2:   #43423e;
+    --accent:   #6da7ec;
+    --accent-mk:#3987e5;
+    --s-nudox:  #3987e5;
+    --s-rg:     #d95926;
+    --s-ra:     #199e70;
+    --s-dim:    #256abf;
+    --good:     #0ca30c;
+    --good-bg:  #142614;
+    --warn:     #fab219;
+    --warn-bg:  #2a2211;
+    --crit:     #e06767;
+    --crit-bg:  #2b1616;
+    --grid:     #2c2c2a;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ground:   #0d0d0d;
+  --plate:    #1a1a19;
+  --sunk:     #131312;
+  --ink:      #f7f7f5;
+  --ink-2:    #c3c2b7;
+  --ink-3:    #898781;
+  --rule:     #2c2c2a;
+  --rule-2:   #43423e;
+  --accent:   #6da7ec;
+  --accent-mk:#3987e5;
+  --s-nudox:  #3987e5;
+  --s-rg:     #d95926;
+  --s-ra:     #199e70;
+  --s-dim:    #256abf;
+  --good:     #0ca30c;
+  --good-bg:  #142614;
+  --warn:     #fab219;
+  --warn-bg:  #2a2211;
+  --crit:     #e06767;
+  --crit-bg:  #2b1616;
+  --grid:     #2c2c2a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: "Source Serif 4", ui-serif, Georgia, serif;
+  font-size: var(--f-0);
+  line-height: 1.62;
+  margin: 0;
+  padding: 0 1.4rem 7rem;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 63rem; margin: 0 auto; }
+.prose { max-width: var(--measure); }
+
+h1, h2, h3, .eyebrow, .chip, th, .mono, code, kbd, figcaption .lab {
+  font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
+}
+code, kbd, .mono, .num, table.data td, table.data th {
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+h1 {
+  font-size: var(--f-4);
+  line-height: 1.03;
+  letter-spacing: -0.028em;
+  font-weight: 700;
+  margin: 0 0 0.7rem;
+  text-wrap: balance;
+}
+h2 {
+  font-size: var(--f-2);
+  letter-spacing: -0.016em;
+  font-weight: 600;
+  line-height: 1.2;
+  margin: 0 0 0.9rem;
+  text-wrap: balance;
+}
+h3 {
+  font-size: var(--f-1);
+  letter-spacing: -0.01em;
+  font-weight: 600;
+  margin: 0 0 0.45rem;
+  text-wrap: balance;
+}
+p { margin: 0 0 1.05rem; }
+p:last-child { margin-bottom: 0; }
+strong { font-weight: 600; }
+a { color: var(--accent); text-underline-offset: 2px; }
+a:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+code {
+  font-size: 0.87em;
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.05em 0.32em;
+  word-break: break-word;
+}
+
+.eyebrow {
+  font-size: var(--f-xs);
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 0 0 0.5rem;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+/* ---------- masthead ---------- */
+
+.masthead {
+  padding: 4.2rem 0 2.2rem;
+  border-bottom: 3px solid var(--ink);
+  margin-bottom: 2.6rem;
+}
+.lede {
+  font-size: var(--f-1);
+  line-height: 1.5;
+  color: var(--ink-2);
+  max-width: 60ch;
+  margin-bottom: 1.5rem;
+}
+.provenance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.5rem;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: var(--f-xs);
+  color: var(--ink-2);
+}
+.provenance span {
+  border: 1px solid var(--rule-2);
+  border-radius: 2px;
+  padding: 0.18rem 0.5rem;
+  background: var(--plate);
+}
+
+/* ---------- sections ---------- */
+
+section { margin: 0 0 3.6rem; }
+section > * + * { margin-top: 1.1rem; }
+
+.sec-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.9rem;
+  border-top: 1px solid var(--rule-2);
+  padding-top: 0.9rem;
+  margin-bottom: 1.3rem;
+}
+.sec-head .idx {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: var(--f-xs);
+  font-weight: 600;
+  color: var(--ink-3);
+  letter-spacing: 0.08em;
+  flex: none;
+  padding-top: 0.35rem;
+}
+.sec-head h2 { margin: 0; }
+
+/* ---------- stat row ---------- */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.stat {
+  background: var(--plate);
+  padding: 1.15rem 1.15rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.stat .n {
+  font-family: Archivo, sans-serif;
+  font-size: 2.15rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.stat .k {
+  font-size: var(--f-sm);
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+
+/* ---------- callout ---------- */
+
+.callout {
+  background: var(--plate);
+  border: 1px solid var(--rule-2);
+  border-left: 3px solid var(--warn);
+  border-radius: 3px;
+  padding: 1.3rem 1.4rem;
+}
+.callout h3 { margin-bottom: 0.7rem; }
+.callout ul { margin: 0; padding-left: 1.15rem; }
+.callout li { margin-bottom: 0.55rem; }
+.callout li:last-child { margin-bottom: 0; }
+
+.note {
+  font-size: var(--f-sm);
+  color: var(--ink-2);
+  border-left: 2px solid var(--rule-2);
+  padding-left: 0.9rem;
+  max-width: var(--measure);
+}
+
+/* ---------- tables ---------- */
+
+.tablewrap {
+  overflow-x: auto;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--plate);
+}
+table.data {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: var(--f-sm);
+  font-variant-numeric: tabular-nums;
+}
+table.data th {
+  text-align: right;
+  font-weight: 600;
+  font-size: var(--f-xs);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding: 0.7rem 0.75rem;
+  border-bottom: 1px solid var(--rule-2);
+  white-space: nowrap;
+}
+table.data th:first-child, table.data td:first-child { text-align: left; }
+table.data td {
+  text-align: right;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+  color: var(--ink-2);
+}
+table.data tbody tr:last-child td { border-bottom: none; }
+table.data td.name { color: var(--ink); font-weight: 500; }
+table.data tr.hl td { background: var(--sunk); }
+table.data caption {
+  caption-side: bottom;
+  text-align: left;
+  font-family: "Source Serif 4", serif;
+  font-size: var(--f-sm);
+  color: var(--ink-3);
+  padding: 0.7rem 0.75rem 0.8rem;
+  line-height: 1.45;
+}
+
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 0.45rem; vertical-align: 1px; }
+.d-nudox { background: var(--s-nudox); }
+.d-rg    { background: var(--s-rg); }
+.d-ra    { background: var(--s-ra); }
+
+.v {
+  display: inline-block;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: var(--f-xs);
+  font-weight: 600;
+  border-radius: 2px;
+  padding: 0.1rem 0.36rem;
+  border: 1px solid transparent;
+}
+.v-pass { color: var(--good); background: var(--good-bg); border-color: color-mix(in srgb, var(--good) 30%, transparent); }
+.v-fail { color: var(--crit); background: var(--crit-bg); border-color: color-mix(in srgb, var(--crit) 30%, transparent); }
+.v-dec  { color: var(--ink-3); background: var(--sunk); border-color: var(--rule); }
+.v-uns  { color: var(--warn); background: var(--warn-bg); border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+.v-deg  { color: var(--accent); background: transparent; border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+
+/* ---------- figures ---------- */
+
+figure {
+  margin: 0;
+  background: var(--plate);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 1.25rem 1.3rem 1.1rem;
+}
+figure .fig-title {
+  font-family: Archivo, sans-serif;
+  font-weight: 600;
+  font-size: var(--f-1);
+  letter-spacing: -0.01em;
+  margin: 0 0 0.15rem;
+}
+figure .fig-sub {
+  font-size: var(--f-sm);
+  color: var(--ink-2);
+  margin: 0 0 1rem;
+  max-width: 62ch;
+}
+.svg-scroll { overflow-x: auto; }
+figure svg { display: block; min-width: 640px; width: 100%; height: auto; }
+figcaption {
+  font-size: var(--f-sm);
+  color: var(--ink-2);
+  margin-top: 0.9rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--rule);
+  max-width: 68ch;
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.1rem;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: var(--f-xs);
+  color: var(--ink-2);
+  margin: 0 0 0.85rem;
+}
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 0.4rem; vertical-align: 0; }
+.legend .ring { background: transparent; border: 2px solid var(--ink-3); }
+
+svg text { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+.ax { fill: var(--ink-3); font-size: 11px; }
+.lab { fill: var(--ink); font-size: 11.5px; font-weight: 500; }
+.lab-2 { fill: var(--ink-2); font-size: 10.5px; }
+.gridline { stroke: var(--grid); stroke-width: 1; }
+.axisline { stroke: var(--rule-2); stroke-width: 1; }
+
+/* ---------- pipeline ---------- */
+
+.pipe {
+  display: grid;
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.step {
+  background: var(--plate);
+  display: grid;
+  grid-template-columns: 3.4rem 1fr;
+  gap: 0 1.1rem;
+  padding: 1.15rem 1.2rem;
+}
+.step .n {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: var(--f-sm);
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.04em;
+  padding-top: 0.15rem;
+}
+.step .body > * + * { margin-top: 0.7rem; }
+.step h3 { margin: 0; }
+.step p { margin: 0; font-size: 0.955rem; }
+.step .src { max-width: 62ch; }
+
+pre {
+  margin: 0;
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.85rem 0.95rem;
+  overflow-x: auto;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: var(--f-xs);
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+pre b { color: var(--ink); font-weight: 600; }
+pre .c { color: var(--ink-3); }
+pre .k { color: var(--accent); }
+
+/* ---------- claim grid ---------- */
+
+.claims {
+  display: grid;
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.claim {
+  background: var(--plate);
+  padding: 1.2rem 1.25rem;
+  display: grid;
+  gap: 0.5rem;
+}
+.claim h3 { margin: 0; font-size: 1.06rem; }
+.claim p { margin: 0; font-size: 0.955rem; }
+.claim .where {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: var(--f-xs);
+  color: var(--ink-3);
+  border-top: 1px dashed var(--rule-2);
+  padding-top: 0.5rem;
+}
+.claim .where b { color: var(--ink-2); font-weight: 500; }
+
+.cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: 1.5rem;
+}
+.cols > div > h3 { margin-bottom: 0.4rem; }
+.cols p { font-size: 0.955rem; }
+
+ol.findings { margin: 0; padding-left: 1.3rem; max-width: var(--measure); }
+ol.findings > li { margin-bottom: 1rem; }
+ol.findings > li::marker { font-family: "IBM Plex Mono", monospace; font-size: var(--f-sm); color: var(--ink-3); }
+
+footer {
+  border-top: 1px solid var(--rule-2);
+  padding-top: 1.2rem;
+  font-size: var(--f-sm);
+  color: var(--ink-3);
+  max-width: var(--measure);
+}
+
+@media (max-width: 620px) {
+  :root { --f-4: 2.15rem; --f-3: 1.7rem; --f-2: 1.3rem; }
+  .step { grid-template-columns: 1fr; gap: 0.6rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+</style>
+
+<div class="wrap">
+
+<header class="masthead">
+  <p class="eyebrow">nudox-bench · run-2026-08-30-165221 · 2026-08-30</p>
+  <h1>The Nudox-Bench Protocol</h1>
+  <p class="lede">What the benchmark asked, what came back, how every number was
+  recorded and scored — and which claims that method will and will not support.
+  Ten scenarios, seven adapters, four languages, one machine.</p>
+  <div class="provenance">
+    <span>10 scenarios</span>
+    <span>7 adapters</span>
+    <span>70 attempts</span>
+    <span>ground truth read from source</span>
+    <span>cl100k + o200k, real BPE</span>
+    <span>deterministic scoring</span>
+  </div>
+</header>
+
+<!-- ============ 1. THE QUESTION ============ -->
+<section>
+  <div class="sec-head"><span class="idx">01</span><h2>The question this instrument asks</h2></div>
+
+  <div class="prose">
+    <p>For a real question about a real package — <em>who calls this, what is
+    this signature, what changed between these two versions</em> — does a system
+    produce the answer, <strong>how well resolved is the evidence</strong>, and
+    <strong>what does it cost an agent's context</strong>?</p>
+
+    <p>The comparison set is deliberately unglamorous. Nudox is measured against
+    the tools an agent already has on the machine — <code>ripgrep</code> and
+    <code>rust-analyzer</code> — because those are what a code-intelligence
+    index has to beat to be worth installing, and against four restricted
+    versions of itself, to price each part of its own surface.</p>
+  </div>
+
+  <div class="callout">
+    <h3>Read this before the numbers</h3>
+    <ul>
+      <li><strong>Semantic search was off.</strong> Every Nudox response carried
+      <code>~sem:unavailable(NoModelConfigured)</code> — no embedding model was
+      configured, so half of what <code>search</code> normally ranks with was
+      disabled. These are structural-only numbers, and the run says so in-band.</li>
+      <li><strong>Nudox held 3 of the 5 packages.</strong> The Go oracle binary is
+      not installed, and the installed Python <code>requests</code> has no
+      <code>pyproject.toml</code> for the producer to read. Those scenarios are
+      recorded as <em>declined</em>, not failed.</li>
+      <li><strong>The judge did not run.</strong> No <code>OPENROUTER_API_KEY</code>,
+      so the two implementation scenarios are <em>unscored</em> and are held out
+      of every pass rate rather than counted against anyone.</li>
+      <li><strong>Ten scenarios is a small sample.</strong> Nothing here is
+      statistically significant. This is a working instrument reporting its first
+      readings, and the most useful findings in it are about the instrument.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ 2. RESULTS ============ -->
+<section>
+  <div class="sec-head"><span class="idx">02</span><h2>What came back</h2></div>
+
+  <div class="stats">
+    <div class="stat">
+      <span class="n">12.6&times;</span>
+      <span class="k">fewer tokens than ripgrep on the five scenarios both systems attempted — 785 against 9,853 per question</span>
+    </div>
+    <div class="stat">
+      <span class="n">0.00</span>
+      <span class="k">resolution gap: every fact Nudox returned came back as a qualified symbol, not as a line of source containing the right word</span>
+    </div>
+    <div class="stat">
+      <span class="n">3,761</span>
+      <span class="k">cl100k tokens the nine-tool surface costs before a single question is asked — roughly 3&times; an average answer</span>
+    </div>
+  </div>
+
+  <figure>
+    <p class="fig-title">Cheaper and further up is better</p>
+    <p class="fig-sub">Cost against correctness. Each point is one adapter over
+    the scenarios it attempted and that were mechanically scored; x is a log
+    scale, because the spread is an order of magnitude.</p>
+    <div class="svg-scroll">
+    <svg viewBox="0 0 720 360" role="img" aria-label="Scatter of tokens per scenario against pass rate. ripgrep is highest at 71 percent but costs 9,658 tokens; nudox-full and nudox-keys sit at 50 percent for 1,278 tokens; nudox-graph-first 33 percent at 1,230; nudox-oneshot 33 percent at 750; nudox-search-only 29 percent at 293; rust-analyzer 25 percent at 306.">
+      <g>
+        <line class="gridline" x1="80" y1="300" x2="690" y2="300"></line>
+        <line class="gridline" x1="80" y1="235" x2="690" y2="235"></line>
+        <line class="gridline" x1="80" y1="170" x2="690" y2="170"></line>
+        <line class="gridline" x1="80" y1="105" x2="690" y2="105"></line>
+        <line class="gridline" x1="80" y1="40"  x2="690" y2="40"></line>
+        <text class="ax" x="70" y="304" text-anchor="end">0%</text>
+        <text class="ax" x="70" y="239" text-anchor="end">25%</text>
+        <text class="ax" x="70" y="174" text-anchor="end">50%</text>
+        <text class="ax" x="70" y="109" text-anchor="end">75%</text>
+        <text class="ax" x="70" y="44"  text-anchor="end">100%</text>
+        <line class="axisline" x1="80" y1="40" x2="80" y2="300"></line>
+      </g>
+      <g>
+        <text class="ax" x="137" y="322" text-anchor="middle">300</text>
+        <text class="ax" x="308" y="322" text-anchor="middle">1k</text>
+        <text class="ax" x="464" y="322" text-anchor="middle">3k</text>
+        <text class="ax" x="634" y="322" text-anchor="middle">10k</text>
+        <text class="ax" x="385" y="344" text-anchor="middle">tokens per scenario (larger of cl100k / o200k, log scale)</text>
+        <text class="ax" x="80" y="24" text-anchor="start">scenarios passed</text>
+      </g>
+
+      <!-- ripgrep -->
+      <circle cx="629" cy="114" r="7" fill="var(--s-rg)" stroke="var(--plate)" stroke-width="2">
+        <title>ripgrep — 5/7 passed (71%), 9,658 tokens per scenario</title>
+      </circle>
+      <text class="lab" x="617" y="99" text-anchor="end">ripgrep</text>
+      <text class="lab-2" x="617" y="113" text-anchor="end">9,658 tok · 5/7</text>
+
+      <!-- nudox full + keys (identical) -->
+      <circle cx="343" cy="170" r="7" fill="var(--s-nudox)" stroke="var(--plate)" stroke-width="2">
+        <title>nudox-full and nudox-keys — identical results: 3/6 passed (50%), 1,278 tokens per scenario</title>
+      </circle>
+      <text class="lab" x="357" y="166">nudox-full = nudox-keys</text>
+      <text class="lab-2" x="357" y="180">1,278 tok · 3/6</text>
+
+      <!-- graph-first -->
+      <circle cx="337" cy="213" r="7" fill="var(--s-nudox)" stroke="var(--plate)" stroke-width="2">
+        <title>nudox-graph-first — 2/6 passed (33%), 1,230 tokens per scenario</title>
+      </circle>
+      <text class="lab" x="351" y="216">nudox-graph-first</text>
+      <text class="lab-2" x="351" y="230">1,230 tok · 2/6</text>
+
+      <!-- oneshot -->
+      <circle cx="267" cy="213" r="7" fill="var(--s-nudox)" stroke="var(--plate)" stroke-width="2">
+        <title>nudox-oneshot — 2/6 passed (33%), 750 tokens per scenario</title>
+      </circle>
+      <text class="lab" x="255" y="209" text-anchor="end">nudox-oneshot</text>
+      <text class="lab-2" x="255" y="223" text-anchor="end">750 tok · 2/6</text>
+
+      <!-- search-only and rust-analyzer: genuinely overlapping, leader-lined apart -->
+      <circle cx="134" cy="225" r="7" fill="var(--s-nudox)" stroke="var(--plate)" stroke-width="2">
+        <title>nudox-search-only — 2/7 passed (29%), 293 tokens per scenario</title>
+      </circle>
+      <circle cx="140" cy="235" r="7" fill="var(--s-ra)" stroke="var(--plate)" stroke-width="2">
+        <title>rust-analyzer — 1/4 passed (25%), 306 tokens per scenario</title>
+      </circle>
+      <line class="axisline" x1="134" y1="219" x2="134" y2="196"></line>
+      <text class="lab" x="128" y="192" text-anchor="start">nudox-search-only</text>
+      <text class="lab-2" x="128" y="206" text-anchor="start">293 tok · 2/7</text>
+      <line class="axisline" x1="140" y1="242" x2="140" y2="262"></line>
+      <text class="lab" x="134" y="275" text-anchor="start">rust-analyzer</text>
+      <text class="lab-2" x="134" y="289" text-anchor="start">306 tok · 1/4</text>
+    </svg>
+    </div>
+    <figcaption><span class="dot d-nudox"></span>Nudox and its ablations
+    <span class="dot d-rg" style="margin-left:.6rem"></span>ripgrep
+    <span class="dot d-ra" style="margin-left:.6rem"></span>rust-analyzer.
+    The points are not answering the same set of questions — see the declined
+    column below — so the honest like-for-like reading is the head-to-head
+    subset, not this chart's x-spread alone.</figcaption>
+  </figure>
+
+  <h3>Every adapter, every column</h3>
+  <div class="tablewrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>adapter</th><th>pass</th><th>declined</th><th>unscored</th>
+          <th>strict</th><th>loose</th><th>gap</th><th>distr.</th>
+          <th>tok/scenario</th><th>tok/pass</th><th>calls</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="hl"><td class="name"><span class="dot d-nudox"></span>nudox-full</td><td>3/6 · 50%</td><td>3</td><td>1</td><td>0.62</td><td>0.62</td><td>0.00</td><td>0</td><td>1,278</td><td>2,557</td><td>2.2</td></tr>
+        <tr class="hl"><td class="name"><span class="dot d-nudox"></span>nudox-keys</td><td>3/6 · 50%</td><td>3</td><td>1</td><td>0.62</td><td>0.62</td><td>0.00</td><td>0</td><td>1,278</td><td>2,557</td><td>2.2</td></tr>
+        <tr><td class="name"><span class="dot d-nudox"></span>nudox-oneshot</td><td>2/6 · 33%</td><td>3</td><td>1</td><td>0.36</td><td>0.38</td><td>0.03</td><td>0</td><td>750</td><td>2,250</td><td>1.0</td></tr>
+        <tr><td class="name"><span class="dot d-nudox"></span>nudox-graph-first</td><td>2/6 · 33%</td><td>3</td><td>1</td><td>0.45</td><td>0.45</td><td>0.00</td><td>0</td><td>1,230</td><td>3,692</td><td>2.2</td></tr>
+        <tr><td class="name"><span class="dot d-nudox"></span>nudox-search-only</td><td>2/7 · 29%</td><td>1</td><td>2</td><td>0.39</td><td>0.41</td><td>0.02</td><td>0</td><td>293</td><td>1,026</td><td>1.0</td></tr>
+        <tr class="hl"><td class="name"><span class="dot d-rg"></span>ripgrep</td><td>5/7 · 71%</td><td>1</td><td>2</td><td>0.95</td><td>1.00</td><td>0.05</td><td>1</td><td>9,658</td><td>13,522</td><td>1.0</td></tr>
+        <tr><td class="name"><span class="dot d-ra"></span>rust-analyzer</td><td>1/4 · 25%</td><td>5</td><td>1</td><td>0.35</td><td>0.39</td><td>0.04</td><td>0</td><td>306</td><td>1,226</td><td>1.5</td></tr>
+      </tbody>
+      <caption>Pass denominators count only scenarios an adapter both attempted
+      and could be mechanically scored on. <em>declined</em> — the adapter could
+      not express the question — never enters a pass rate.
+      <em>unscored</em> — the two implementation scenarios, which need the judge
+      that did not run.</caption>
+    </table>
+  </div>
+
+  <h3>The like-for-like subset</h3>
+  <div class="prose">
+    <p>Five scenarios were attempted and scored by both Nudox and ripgrep. That
+    subset is the only place a direct cost comparison is fair, and it is where
+    the strongest claim in this run lives:</p>
+  </div>
+  <div class="tablewrap">
+    <table class="data">
+      <thead><tr><th>on the 5 shared scenarios</th><th>passed</th><th>tok/scenario</th><th>cost ratio</th></tr></thead>
+      <tbody>
+        <tr><td class="name"><span class="dot d-nudox"></span>nudox-full</td><td>3/5</td><td>785</td><td>1.0&times;</td></tr>
+        <tr><td class="name"><span class="dot d-rg"></span>ripgrep</td><td>4/5</td><td>9,853</td><td>12.6&times;</td></tr>
+        <tr><td class="name" colspan="4" style="color:var(--ink-3);font-weight:400">restricted to the 4 Rust scenarios both attempted</td></tr>
+        <tr><td class="name"><span class="dot d-nudox"></span>nudox-full</td><td>3/4</td><td>912</td><td>1.0&times;</td></tr>
+        <tr><td class="name"><span class="dot d-rg"></span>ripgrep</td><td>3/4</td><td>12,089</td><td>13.3&times;</td></tr>
+      </tbody>
+      <caption>On Rust, the two tie on correctness and differ by 13&times; in
+      context spent. Add the TypeScript scenario and ripgrep is ahead on
+      correctness, 4/5 to 3/5. "Same answers, a fraction of the context" is
+      supported here. "More correct answers" is not.</caption>
+    </table>
+  </div>
+
+  <h3>Every scenario, every verdict</h3>
+  <div class="tablewrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>scenario</th><th>family</th>
+          <th>nudox-full</th><th>oneshot</th><th>search-only</th><th>graph-first</th><th>keys</th>
+          <th>ripgrep</th><th>rust-analyzer</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="name">go/uuid/callers-parse</td><td>polyglot</td>
+          <td><span class="v v-dec">declined</span></td><td><span class="v v-dec">declined</span></td>
+          <td><span class="v v-fail">0%</span> 104</td><td><span class="v v-dec">declined</span></td><td><span class="v v-dec">declined</span></td>
+          <td><span class="v v-fail">100%</span> 10,719</td><td><span class="v v-dec">declined</span></td>
+        </tr>
+        <tr>
+          <td class="name">go/uuid/implement-namespaced-ids</td><td>implementation</td>
+          <td><span class="v v-dec">declined</span></td><td><span class="v v-dec">declined</span></td>
+          <td><span class="v v-uns">unscored</span></td><td><span class="v v-dec">declined</span></td><td><span class="v v-dec">declined</span></td>
+          <td><span class="v v-uns">unscored</span></td><td><span class="v v-dec">declined</span></td>
+        </tr>
+        <tr>
+          <td class="name">py/requests/callers-api-request</td><td>polyglot</td>
+          <td><span class="v v-dec">declined</span></td><td><span class="v v-dec">declined</span></td>
+          <td><span class="v v-fail">0%</span> 103</td><td><span class="v v-dec">declined</span></td><td><span class="v v-dec">declined</span></td>
+          <td><span class="v v-pass">pass</span> 7,626</td><td><span class="v v-dec">declined</span></td>
+        </tr>
+        <tr>
+          <td class="name">rust/hashbrown/diff-0.16.1-to-0.17.1</td><td>retrieval</td>
+          <td><span class="v v-fail">0%</span> 3,745</td><td><span class="v v-fail">0%</span> 3,745</td>
+          <td><span class="v v-dec">declined</span></td><td><span class="v v-fail">0%</span> 3,745</td><td><span class="v v-fail">0%</span> 3,745</td>
+          <td><span class="v v-dec">declined</span></td><td><span class="v v-dec">declined</span></td>
+        </tr>
+        <tr>
+          <td class="name">rust/memchr/callers-search-slice-with-raw</td><td>retrieval</td>
+          <td><span class="v v-pass">pass</span> 1,657</td><td><span class="v v-fail">0%</span> 165</td>
+          <td><span class="v v-fail">0%</span> 165</td><td><span class="v v-fail">0%</span> 1,370</td><td><span class="v v-pass">pass</span> 1,657</td>
+          <td><span class="v v-fail">67%</span> 28,279</td><td><span class="v v-fail">0%</span> 845</td>
+        </tr>
+        <tr>
+          <td class="name">rust/memchr/implement-three-byte-scan</td><td>implementation</td>
+          <td><span class="v v-uns">unscored</span></td><td><span class="v v-uns">unscored</span></td>
+          <td><span class="v v-uns">unscored</span></td><td><span class="v v-uns">unscored</span></td><td><span class="v v-uns">unscored</span></td>
+          <td><span class="v v-uns">unscored</span></td><td><span class="v v-uns">unscored</span></td>
+        </tr>
+        <tr>
+          <td class="name">rust/memchr/iter-return-type</td><td>efficiency</td>
+          <td><span class="v v-pass">pass</span> 315</td><td><span class="v v-pass">pass</span> 136</td>
+          <td><span class="v v-pass">pass</span> 136</td><td><span class="v v-pass">pass</span> 315</td><td><span class="v v-pass">pass</span> 315</td>
+          <td><span class="v v-pass">pass</span> 551</td><td><span class="v v-pass">pass</span> 223</td>
+        </tr>
+        <tr>
+          <td class="name">rust/memchr/public-surface</td><td>retrieval</td>
+          <td><span class="v v-fail">60%</span> 1,215</td><td><span class="v v-fail">13%</span> 50</td>
+          <td><span class="v v-fail">60%</span> 1,037</td><td><span class="v v-fail">60%</span> 1,215</td><td><span class="v v-fail">60%</span> 1,215</td>
+          <td><span class="v v-pass">pass</span> 18,527</td><td><span class="v v-fail">40%</span> 119</td>
+        </tr>
+        <tr>
+          <td class="name">rust/memchr/signature-memchr3</td><td>retrieval</td>
+          <td><span class="v v-pass">pass</span> 459</td><td><span class="v v-pass">pass</span> 355</td>
+          <td><span class="v v-pass">pass</span> 355</td><td><span class="v v-pass">pass</span> 459</td><td><span class="v v-pass">pass</span> 459</td>
+          <td><span class="v v-pass">pass</span> 997</td><td><span class="v v-fail">0%</span> 39</td>
+        </tr>
+        <tr>
+          <td class="name">ts/commander/public-surface</td><td>polyglot</td>
+          <td><span class="v v-fail">10%</span> 279</td><td><span class="v v-fail">0%</span> 49</td>
+          <td><span class="v v-fail">10%</span> 153</td><td><span class="v v-fail">10%</span> 279</td><td><span class="v v-fail">10%</span> 279</td>
+          <td><span class="v v-pass">pass</span> 910</td><td><span class="v v-dec">declined</span></td>
+        </tr>
+      </tbody>
+      <caption>Percentages are strict recall; the number beside a verdict is the
+      tokens that attempt cost. Note ripgrep's row for
+      <code>go/uuid/callers-parse</code>: <strong>100% recall and a fail</strong>
+      — see the distractor rule in section 04.</caption>
+    </table>
+  </div>
+</section>
+
+<!-- ============ 3. HOW RECORDED ============ -->
+<section>
+  <div class="sec-head"><span class="idx">03</span><h2>How a number gets recorded</h2></div>
+
+  <div class="prose">
+    <p>A run is a matrix: every adapter attempts every scenario, and each of the
+    70 cells in this run produced one recorded attempt. The pipeline below is
+    the sequence a single cell goes through. It is genuinely a sequence — the
+    output of each step is the input to the next, and every step writes down
+    what it did.</p>
+  </div>
+
+  <div class="pipe">
+    <div class="step">
+      <span class="n">01</span>
+      <div class="body">
+        <h3>A scenario is written by reading the package</h3>
+        <p class="src">Each scenario is a TOML file holding a question a developer
+        would actually ask, plus the answer, derived by <strong>reading the source
+        of the pinned version</strong> — never recalled from memory. Every file
+        opens with a comment naming the file and lines the truth came from, so a
+        disputed result is settled by looking, not by arguing.</p>
+<pre><span class="c"># Ground truth derived by reading memchr-2.8.3 directly, not from memory:
+#   rg -n 'search_slice_with_raw' src/
+# The six call sites in src/memchr.rs are at lines 31, 63, 96, 129, 167, 205,
+# inside memchr, memrchr, memchr2, memrchr2, memchr3 and memrchr3.</span>
+<b>id</b>     = "rust/memchr/callers-search-slice-with-raw"
+<b>family</b> = "retrieval"
+<b>task</b>   = "callers"
+
+[target]  <span class="c">ecosystem = "crates.io", package = "memchr", version = "2.8.3"</span>
+[probe]   <span class="c">name / symbol / query — the subject in every spelling</span>
+
+[truth]
+<b>mode</b>   = "symbol_set"
+<b>all_of</b> = ["memchr::memchr", "memchr::memrchr", "memchr::memchr2",
+           "memchr::memrchr2", "memchr::memchr3", "memchr::memrchr3"]
+
+[budget]  <span class="c">max_tool_calls = 4, token_budget = 4000</span></pre>
+        <p class="src">A scenario also records what it is <em>sensitive</em> to.
+        This one deliberately excludes the architecture-specific backends from
+        both <code>all_of</code> and <code>none_of</code>, because each is
+        <code>cfg</code>-gated to one target and whether it belongs in the answer
+        is a defensible design choice. Scoring a tool on a judgement call makes
+        the number mean less, not more.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="n">02</span>
+      <div class="body">
+        <h3>Each adapter maps the question onto its own surface</h3>
+        <p class="src">The scenario names a <em>task</em> and a <em>subject</em>,
+        never a tool call. Each adapter decides how to ask: ripgrep wants a
+        literal and a set of flags, rust-analyzer wants a symbol plus a file
+        position over LSP, Nudox wants an address and a tool route. This is why
+        the comparison can include things that are not MCP servers at all.</p>
+        <p class="src">If an adapter cannot express a question, it returns
+        <strong>declined with a written reason</strong> rather than a wrong
+        answer — <code>rust-analyzer does not speak go</code>,
+        <code>go:github.com/google/uuid is not loaded in this corpus</code>. Both
+        reason strings are quoted verbatim in the report.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="n">03</span>
+      <div class="body">
+        <h3>The exact bytes on the wire are metered</h3>
+        <p class="src">Requests and responses are kept as the raw text that
+        crossed the wire — no deserialization into typed structs first, because
+        the payload <em>is</em> the measurement. Two costs are counted and never
+        mixed:</p>
+        <p class="src"><strong>resident</strong> — every tool description plus
+        every argument-schema description, paid once per session before a
+        question is asked. <strong>marginal</strong> — the requests and responses
+        for this one question.</p>
+        <p class="src">Both go through a real BPE tokenizer, reported under
+        <code>cl100k_base</code> and <code>o200k_base</code> together; where one
+        figure is needed, the <em>larger</em> of the two is used, so no
+        compactness claim is flattered by tokenizer choice. There is deliberately
+        no cheap estimator path: a count-alphanumeric-runs proxy scores a 64-hex
+        key as <strong>1 token</strong> instead of ~50 — a 50&times; error on the
+        largest single item in a Nudox payload, which is exactly what this
+        benchmark exists to measure.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="n">04</span>
+      <div class="body">
+        <h3>The attempt is scored and written to disk</h3>
+        <p class="src">Scoring is mechanical (section 04). Each run writes a
+        timestamped <code>report.json</code> — every attempt, every fact verdict,
+        every cost, every decline reason — and a <code>report.md</code> beside
+        it. Every figure and table on this page is derived from that JSON; the
+        run id is <code>run-2026-08-30-165221</code>.</p>
+<pre>{ "scenario_id": "rust/memchr/callers-search-slice-with-raw",
+  "adapter": "nudox-full",
+  "score": { <b>"strict_recall": 1.0</b>, "loose_recall": 1.0,
+             "distractors": 0, "any_of_satisfied": true, <b>"passed": true</b>,
+             "facts": [ { "fact": "memchr::memchr", <b>"tier": "strict"</b> }, … ] },
+  "attempt": { "tool_calls": 2, "elapsed_ms": …,
+               "cost": { "requests": {…}, "responses": {"cl100k": 1602, …} } } }</pre>
+      </div>
+    </div>
+  </div>
+
+  <figure>
+    <p class="fig-title">What the surface costs before you ask anything</p>
+    <p class="fig-sub">The nine tool descriptions and their argument schemas,
+    measured in cl100k tokens. This is paid on every turn of every session,
+    whether or not a tool is called.</p>
+    <div class="svg-scroll">
+    <svg viewBox="0 0 720 190" role="img" aria-label="Segmented bar of the 3,761-token resident surface: index 946, search 566, read 471, diff 418, refs 393, select_version 315, graph 263, packages 255, schema 134.">
+      <text class="lab" x="40" y="26">3,761 tokens resident · 9 tools</text>
+      <text class="lab-2" x="680" y="26" text-anchor="end">average answer in this run: 1,278</text>
+
+      <rect x="40"    y="44" width="156.9" height="34" fill="var(--s-nudox)" rx="2"><title>index — 946 cl100k tokens, 25% of the surface</title></rect>
+      <rect x="198.9" y="44" width="93.9"  height="34" fill="var(--s-dim)" rx="2"><title>search — 566 tokens</title></rect>
+      <rect x="294.8" y="44" width="78.1"  height="34" fill="var(--s-dim)" rx="2"><title>read — 471 tokens</title></rect>
+      <rect x="374.9" y="44" width="69.3"  height="34" fill="var(--s-dim)" rx="2"><title>diff — 418 tokens</title></rect>
+      <rect x="446.2" y="44" width="65.2"  height="34" fill="var(--s-dim)" rx="2"><title>refs — 393 tokens</title></rect>
+      <rect x="513.4" y="44" width="52.3"  height="34" fill="var(--s-dim)" rx="2"><title>select_version — 315 tokens</title></rect>
+      <rect x="567.7" y="44" width="43.6"  height="34" fill="var(--s-dim)" rx="2"><title>graph — 263 tokens</title></rect>
+      <rect x="613.3" y="44" width="42.3"  height="34" fill="var(--s-dim)" rx="2"><title>packages — 255 tokens</title></rect>
+      <rect x="657.6" y="44" width="22.2"  height="34" fill="var(--s-dim)" rx="2"><title>schema — 134 tokens</title></rect>
+
+      <line class="axisline" x1="118" y1="82" x2="118" y2="96"></line>
+      <text class="lab" x="118" y="112" text-anchor="middle">index · 946</text>
+      <text class="lab-2" x="118" y="126" text-anchor="middle">25% of the surface</text>
+
+      <g class="ax">
+        <text x="245" y="96" text-anchor="middle">search</text><text x="245" y="109" text-anchor="middle">566</text>
+        <text x="334" y="96" text-anchor="middle">read</text><text x="334" y="109" text-anchor="middle">471</text>
+        <text x="409" y="96" text-anchor="middle">diff</text><text x="409" y="109" text-anchor="middle">418</text>
+        <text x="479" y="96" text-anchor="middle">refs</text><text x="479" y="109" text-anchor="middle">393</text>
+        <text x="540" y="127" text-anchor="middle">sel_ver</text><text x="540" y="140" text-anchor="middle">315</text>
+        <text x="590" y="96" text-anchor="middle">graph</text><text x="590" y="109" text-anchor="middle">263</text>
+        <text x="635" y="127" text-anchor="middle">packages</text><text x="635" y="140" text-anchor="middle">255</text>
+        <text x="669" y="96" text-anchor="middle">schema</text><text x="669" y="109" text-anchor="middle">134</text>
+      </g>
+      <line class="axisline" x1="540" y1="82" x2="540" y2="114"></line>
+      <line class="axisline" x1="635" y1="82" x2="635" y2="114"></line>
+      <text class="lab-2" x="40" y="176">Nine tools cost 3,761; the older 13-tool surface measured 3,875. Consolidation returned ~3%, not the reduction the tool count suggests.</text>
+    </svg>
+    </div>
+    <figcaption><code>index</code> is the single largest item on the surface and
+    the tool a reading session calls zero times — every agent pays for it on
+    every turn regardless. For a session that asks one question, the tool
+    descriptions cost roughly three times the answer.</figcaption>
+  </figure>
+</section>
+
+<!-- ============ 4. HOW EVALUATED ============ -->
+<section>
+  <div class="sec-head"><span class="idx">04</span><h2>How an answer is scored</h2></div>
+
+  <div class="prose">
+    <p>Almost nothing here is judged by a model. <em>Who calls
+    <code>search_slice_with_raw</code></em> has an answer you can read out of the
+    source, and once it is written down, an attempt can be scored by matching
+    text. That single choice is what makes the benchmark reproducible, free to
+    re-run, and safe to put in CI.</p>
+  </div>
+
+  <div class="cols">
+    <div>
+      <h3>Two recalls, not one</h3>
+      <p>The subtle way a retrieval benchmark goes wrong is in deciding that a
+      symbol "appeared". <code>memchr3_iter</code> can show up as a qualified
+      path, as a Nudox address, or as a bare identifier in a line of source that
+      grep happened to print. Those are not the same evidence, and collapsing
+      them flatters whichever tool returns the most undifferentiated text. So
+      every fact is matched twice:</p>
+      <p><strong>strict</strong> — the fully-qualified path, with <code>::</code>,
+      <code>.</code> and <code>/</code> normalized to one separator so a single
+      spelling matches Rust, Go and Python renderings.
+      <strong>loose</strong> — the final identifier, on a word boundary,
+      anywhere in the returned text.</p>
+      <p>The <strong>gap</strong> between them is the measurement. Word
+      boundaries are load-bearing: <code>memchr</code> must not be credited by a
+      line containing only <code>memchr3</code>, and there is a test pinning
+      exactly that case.</p>
+    </div>
+    <div>
+      <h3>Distractors, and the pass rule</h3>
+      <p>A retrieval tool can score perfect recall by returning the whole
+      package. So a scenario also names <code>none_of</code>: symbols a
+      <em>correct, narrow</em> answer would not contain — near-misses and classic
+      text-search false positives. Any one of them sinks the scenario.</p>
+      <p>A <strong>pass</strong> therefore requires all three at once: full
+      strict recall, the <code>any_of</code> gate satisfied, and zero
+      distractors. Deliberately strict — a partial answer to "who calls this" is
+      a wrong answer to "who calls this".</p>
+      <p><strong>This is not hypothetical.</strong> On
+      <code>go/uuid/callers-parse</code>, ripgrep found <strong>100%</strong> of
+      the expected callers and still failed, because <code>ParseBytes</code>
+      landed in the output: an exported function whose name contains
+      <code>Parse</code>, which has its own parsing path and never calls it —
+      verified by reading <code>uuid.go:120</code>. A benchmark scoring recall
+      alone would have called that a perfect answer.</p>
+    </div>
+  </div>
+
+  <figure>
+    <p class="fig-title">How much was actually resolved</p>
+    <p class="fig-sub">Strict recall (filled) against loose recall (ring) for
+    each adapter. The distance between the two is the share of an adapter's
+    apparent success that is undifferentiated text rather than a resolved
+    symbol.</p>
+    <div class="legend">
+      <span><i style="background:var(--ink)"></i>strict — qualified path</span>
+      <span><i class="ring"></i>loose — bare identifier anywhere</span>
+    </div>
+    <div class="svg-scroll">
+    <svg viewBox="0 0 720 268" role="img" aria-label="Dumbbell chart of strict versus loose recall. ripgrep 0.95 to 1.00; nudox-full 0.62 to 0.62; nudox-keys 0.62 to 0.62; nudox-graph-first 0.45 to 0.45; nudox-search-only 0.39 to 0.41; nudox-oneshot 0.36 to 0.38; rust-analyzer 0.35 to 0.39.">
+      <g class="ax">
+        <line class="gridline" x1="180" y1="30" x2="180" y2="218"></line>
+        <line class="gridline" x1="295" y1="30" x2="295" y2="218"></line>
+        <line class="gridline" x1="410" y1="30" x2="410" y2="218"></line>
+        <line class="gridline" x1="525" y1="30" x2="525" y2="218"></line>
+        <line class="gridline" x1="640" y1="30" x2="640" y2="218"></line>
+        <text x="180" y="238" text-anchor="middle">0</text>
+        <text x="295" y="238" text-anchor="middle">0.25</text>
+        <text x="410" y="238" text-anchor="middle">0.50</text>
+        <text x="525" y="238" text-anchor="middle">0.75</text>
+        <text x="640" y="238" text-anchor="middle">1.00</text>
+        <text x="410" y="258" text-anchor="middle">recall over expected facts</text>
+      </g>
+
+      <!-- ripgrep: 0.95 -> 1.00 -->
+      <g><text class="lab" x="168" y="48" text-anchor="end">ripgrep</text>
+        <line x1="617" y1="44" x2="640" y2="44" stroke="var(--ink-3)" stroke-width="2"></line>
+        <circle cx="617" cy="44" r="6" fill="var(--s-rg)" stroke="var(--plate)" stroke-width="2"><title>ripgrep strict recall 0.95</title></circle>
+        <circle cx="640" cy="44" r="6" fill="var(--plate)" stroke="var(--s-rg)" stroke-width="2"><title>ripgrep loose recall 1.00</title></circle>
+        <text class="lab-2" x="660" y="48">gap 0.05</text></g>
+
+      <!-- nudox-full 0.62 -->
+      <g><text class="lab" x="168" y="76" text-anchor="end">nudox-full</text>
+        <circle cx="465" cy="72" r="6" fill="var(--s-nudox)" stroke="var(--plate)" stroke-width="2"><title>nudox-full strict and loose recall both 0.62</title></circle>
+        <text class="lab-2" x="660" y="76">gap 0.00</text></g>
+
+      <!-- nudox-keys 0.62 -->
+      <g><text class="lab" x="168" y="104" text-anchor="end">nudox-keys</text>
+        <circle cx="465" cy="100" r="6" fill="var(--s-nudox)" stroke="var(--plate)" stroke-width="2"><title>nudox-keys strict and loose recall both 0.62</title></circle>
+        <text class="lab-2" x="660" y="104">gap 0.00</text></g>
+
+      <!-- graph-first 0.45 -->
+      <g><text class="lab" x="168" y="132" text-anchor="end">nudox-graph-first</text>
+        <circle cx="387" cy="128" r="6" fill="var(--s-nudox)" stroke="var(--plate)" stroke-width="2"><title>nudox-graph-first strict and loose recall both 0.45</title></circle>
+        <text class="lab-2" x="660" y="132">gap 0.00</text></g>
+
+      <!-- search-only 0.39 -> 0.41 -->
+      <g><text class="lab" x="168" y="160" text-anchor="end">nudox-search-only</text>
+        <line x1="359" y1="156" x2="369" y2="156" stroke="var(--ink-3)" stroke-width="2"></line>
+        <circle cx="359" cy="156" r="6" fill="var(--s-nudox)" stroke="var(--plate)" stroke-width="2"><title>nudox-search-only strict recall 0.39</title></circle>
+        <circle cx="369" cy="156" r="6" fill="var(--plate)" stroke="var(--s-nudox)" stroke-width="2"><title>nudox-search-only loose recall 0.41</title></circle>
+        <text class="lab-2" x="660" y="160">gap 0.02</text></g>
+
+      <!-- oneshot 0.36 -> 0.38 -->
+      <g><text class="lab" x="168" y="188" text-anchor="end">nudox-oneshot</text>
+        <line x1="346" y1="184" x2="355" y2="184" stroke="var(--ink-3)" stroke-width="2"></line>
+        <circle cx="346" cy="184" r="6" fill="var(--s-nudox)" stroke="var(--plate)" stroke-width="2"><title>nudox-oneshot strict recall 0.36</title></circle>
+        <circle cx="355" cy="184" r="6" fill="var(--plate)" stroke="var(--s-nudox)" stroke-width="2"><title>nudox-oneshot loose recall 0.38</title></circle>
+        <text class="lab-2" x="660" y="188">gap 0.03</text></g>
+
+      <!-- rust-analyzer 0.35 -> 0.39 -->
+      <g><text class="lab" x="168" y="216" text-anchor="end">rust-analyzer</text>
+        <line x1="341" y1="212" x2="359" y2="212" stroke="var(--ink-3)" stroke-width="2"></line>
+        <circle cx="341" cy="212" r="6" fill="var(--s-ra)" stroke="var(--plate)" stroke-width="2"><title>rust-analyzer strict recall 0.35</title></circle>
+        <circle cx="359" cy="212" r="6" fill="var(--plate)" stroke="var(--s-ra)" stroke-width="2"><title>rust-analyzer loose recall 0.39</title></circle>
+        <text class="lab-2" x="660" y="216">gap 0.04</text></g>
+    </svg>
+    </div>
+    <figcaption>Nudox's gap is exactly zero: everything it returned, it returned
+    as an address. That is the property being bought, and it is the one that
+    never shows up in a pass/fail column. ripgrep's 5-point gap is small here
+    only because these scenarios ask about distinctively-named symbols — it
+    widens with common names, which is most real code.</figcaption>
+  </figure>
+
+  <h3>The three verdicts that are not "wrong"</h3>
+  <div class="tablewrap">
+    <table class="data">
+      <thead><tr><th>verdict</th><th>what it means</th><th>how it is treated</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="name"><span class="v v-dec">declined</span></td>
+          <td style="text-align:left;white-space:normal">The adapter cannot express this question at all, and says why in writing.</td>
+          <td style="text-align:left;white-space:normal">Never enters a pass rate. "Cannot ask" and "got it wrong" are different findings.</td>
+        </tr>
+        <tr>
+          <td class="name"><span class="v v-uns">unscored</span></td>
+          <td style="text-align:left;white-space:normal">An implementation scenario that needs the model judge, run with no judge available.</td>
+          <td style="text-align:left;white-space:normal">Held out of the pass rate rather than counted as a failure.</td>
+        </tr>
+        <tr>
+          <td class="name"><span class="v v-deg">degraded</span></td>
+          <td style="text-align:left;white-space:normal">A system reported part of itself unavailable while answering — here, <code>~sem:unavailable(NoModelConfigured)</code>.</td>
+          <td style="text-align:left;white-space:normal">Numbers still count, but the report leads with a banner naming the degradation, on every run that has one.</td>
+        </tr>
+      </tbody>
+      <caption>Folding these into failures would report rust-analyzer as
+      <em>bad at Go</em> rather than <em>inapplicable to it</em> — and would let
+      a misconfigured run pass silently as a result about the system.</caption>
+    </table>
+  </div>
+
+  <div class="prose">
+    <h3>Where a judge is still used, and why it is someone else's judge</h3>
+    <p>Only the <code>implementation</code> family reaches a model panel —
+    "using package X, build Y", which has no single right answer. The protocol is
+    <strong>three models voting independently on two booleans</strong>, complete
+    and relevant, with a pass requiring 2-of-3 on both. The panel is a constant
+    in the source, not a config knob, because a panel that drifts between runs
+    makes the runs incomparable.</p>
+    <p>That protocol is inherited unchanged from <code>context-bench</code>, the
+    documentation-retrieval benchmark this harness is meant to be readable
+    against. Changing the judging rule and the system under test at the same time
+    would make the two sets of numbers incomparable — which is the entire reason
+    for keeping a rule you would otherwise want to improve. What is judged is the
+    <em>context</em>, not an implementation: no code is generated or run.</p>
+  </div>
+</section>
+
+<!-- ============ 5. WHY IT HOLDS UP ============ -->
+<section>
+  <div class="sec-head"><span class="idx">05</span><h2>Why these numbers are supportable</h2></div>
+
+  <div class="prose">
+    <p>Every property below is a mechanism in the harness, not an intention.
+    Each names where it is enforced, so the claim can be checked rather than
+    taken.</p>
+  </div>
+
+  <div class="claims">
+    <div class="claim">
+      <h3>The same run gives the same answer</h3>
+      <p>No temperature, no panel drift, no model deprecation quietly
+      invalidating last month's numbers. Eight of ten scenarios are scored by
+      string matching against a recorded answer, so a re-run reproduces the
+      table exactly — and the whole thing costs nothing to re-run, which is what
+      makes it safe to put in CI.</p>
+      <p class="where"><b>enforced by</b> deterministic scoring in <code>src/truth.rs</code>; the judge is reachable only from <code>Family::Implementation</code></p>
+    </div>
+
+    <div class="claim">
+      <h3>The ground truth is traceable to a line of source</h3>
+      <p>Every scenario carries a comment naming the file and lines its answer
+      was read out of, at a pinned version. A disagreement about a result is
+      therefore settled by opening the package — a failing run is a finding, not
+      an argument about whether the question was fair.</p>
+      <p class="where"><b>enforced by</b> convention documented in <code>docs/SCENARIOS.md</code>, visible in every file under <code>scenarios/</code></p>
+    </div>
+
+    <div class="claim">
+      <h3>A scenario that cannot fail is rejected</h3>
+      <p><code>nbench list</code> validates every scenario and refuses ones with
+      no expected facts, a symbol-scoped task with no symbol, a diff with no
+      second version, or an implementation family whose truth is not judged. The
+      most common way to write a worthless scenario is to write one nothing can
+      fail; the loader will not load it.</p>
+      <p class="where"><b>enforced by</b> the scenario loader; run <code>cargo run --bin nbench -- list</code></p>
+    </div>
+
+    <div class="claim">
+      <h3>Cost is measured, never estimated</h3>
+      <p>Real BPE, two independent vocabularies reported together, and the
+      larger of the two used whenever one number is needed. Agreement between
+      two vocabularies is what makes a compactness claim defensible; the absence
+      of a fast estimator path is deliberate, because a character-run proxy is
+      wrong by 50&times; on exactly the payload item that matters most.</p>
+      <p class="where"><b>enforced by</b> <code>src/tokens.rs</code>, with a test pinning the 64-hex-key case</p>
+    </div>
+
+    <div class="claim">
+      <h3>Recall alone cannot buy a pass</h3>
+      <p>Precision is scored explicitly through distractor sets, so a tool
+      cannot win by returning more text. The clearest single result in this run
+      is a 100%-recall failure, which is the mechanism working exactly as
+      designed.</p>
+      <p class="where"><b>enforced by</b> <code>truth.none_of</code> per scenario; any hit sets <code>passed = false</code></p>
+    </div>
+
+    <div class="claim">
+      <h3>There is no headline score, on purpose</h3>
+      <p>Four things are measured — found it, how well resolved, what it cost,
+      could it answer at all — and they trade against each other. Any fixed
+      weighting would encode an opinion about that trade-off into what is
+      supposed to be evidence about it. The summary is a table; the reader does
+      the weighing.</p>
+      <p class="where"><b>enforced by</b> the report format itself — see <code>docs/DESIGN.md § no-headline-number</code></p>
+    </div>
+
+    <div class="claim">
+      <h3>Degradation is reported in-band, at the top</h3>
+      <p>This run's own banner leads with <code>~sem:unavailable</code> on all
+      five Nudox configurations, and with the ablation that could not be
+      exercised. A benchmark that hid a disabled subsystem would be publishing a
+      result about a configuration while implying one about a system.</p>
+      <p class="where"><b>enforced by</b> the degraded-capability banner in <code>src/report.rs</code>, emitted whenever any attempt carries a capability warning</p>
+    </div>
+
+    <div class="claim">
+      <h3>An ablation that did not run says so</h3>
+      <p>The address-versus-hash ablation reported
+      <code>~ablation:not-exercised</code> rather than silently emitting a row
+      identical to the baseline. The finding is real — <code>search</code>
+      renders addresses, so the 64-hex key never crossed the wire — and it is
+      recorded as an unexercised condition rather than as evidence.</p>
+      <p class="where"><b>enforced by</b> the ablation policy check in <code>src/adapter/nudox.rs</code></p>
+    </div>
+  </div>
+
+  <div class="note">
+    <p><strong>What this method does not support.</strong> It cannot tell you
+    whether a model can <em>drive</em> these surfaces unaided — every adapter
+    here follows a fixed, scripted tool path, so what is measured is the surface,
+    not an agent's use of it. It cannot support a statistical claim at n=10. It
+    cannot speak to Nudox's semantic search, which was switched off. And its
+    ripgrep numbers are a floor for a well-flagged invocation, not the ceiling a
+    persistent expert would reach.</p>
+  </div>
+</section>
+
+<!-- ============ 6. READING ============ -->
+<section>
+  <div class="sec-head"><span class="idx">06</span><h2>What the run actually shows</h2></div>
+
+  <ol class="findings">
+    <li><strong>The cost argument is the strong one; the accuracy argument is not
+    yet made.</strong> On the Rust scenarios both systems attempted, Nudox and
+    ripgrep tie at 3 of 4, separated by 13&times; in tokens and a zero resolution
+    gap. <em>Same answers, a fraction of the context</em> is supported. <em>More
+    correct answers</em> is not.</li>
+
+    <li><strong>Nudox's one exclusive question, it got wrong — for a fixable
+    reason.</strong> Cross-version diff is the scenario neither baseline can
+    attempt. Nudox returned 50 changed declarations in 3,745 tokens, but ordered
+    by path, so <code>alloc</code> internals filled the page and the four added
+    <code>HashMap</code> methods fell past the cut. The tool worked; the ordering
+    buried the answer, and the harness took only page one.</li>
+
+    <li><strong>Two of the three Nudox failures were the harness using the tool
+    wrong.</strong> The overview scenario sent a prose query
+    ("memchr public exports") to a search that matches names and kinds — with
+    the embedder off it matched almost nothing and scored 13%. Querying the
+    package name instead reached 60% with no change to Nudox at all. Worth
+    stating plainly: a benchmark's first findings are usually about the
+    benchmark.</li>
+
+    <li><strong>The second tool call earns its keep; the escape hatch does
+    not.</strong> <code>oneshot</code> saves 41% of the tokens and loses a
+    scenario. <code>search-only</code> is 4.3&times; cheaper than the full
+    surface and still answers two — a defensible default for a tight budget, and
+    an argument for making the first response denser. <code>graph-first</code>
+    costs the same as full and answers less: the schema card is cheap at 134
+    tokens, but writing a correct query against it is not free.</li>
+
+    <li><strong>ripgrep is a much stronger baseline than it is usually given
+    credit for.</strong> Given fair flags it passes 5 of 7. Anything replacing it
+    has to win on cost, precision, or reach — not on "can it find things at
+    all".</li>
+
+    <li><strong>Reach is where the gap is structural rather than
+    incremental.</strong> rust-analyzer declined 5 of 10 — every non-Rust
+    package and every cross-version question — and no amount of tuning changes
+    that. It is the axis where an index has a defensible answer, and the axis
+    this run measured least, because the Go and Python producers were
+    unavailable.</li>
+  </ol>
+
+  <div class="prose">
+    <h3>What would make the next run decisive</h3>
+    <p>Turn the embedder on, so half of <code>search</code>'s ranking stops
+    being unmeasured. Install the Go oracle and index a Python source checkout,
+    because polyglot reach is the strongest structural argument and is currently
+    untested. Grow to roughly 50 scenarios weighted toward disagreement — ties
+    tell you nothing, and ten is enough to debug an instrument, not to conclude
+    with. Paginate <code>diff</code> in the adapter, since a real agent that
+    missed its answer on page one would ask for page two. Make the keys ablation
+    real by reading the structured key field, so the address scheme's saving is
+    priced rather than assumed. Add an agent-driven mode, because a scripted tool
+    path cannot answer whether a model can drive this surface unaided. Only then
+    add the MCP field — Context7 and its neighbours — or the result will be a
+    story about a misconfigured harness.</p>
+  </div>
+</section>
+
+<!-- ============ 7. REPRODUCE ============ -->
+<section>
+  <div class="sec-head"><span class="idx">07</span><h2>Reproducing it</h2></div>
+  <div class="prose">
+    <p>The baselines need no endpoint, no API key and no network, and they are
+    the floor every Nudox number is read against. <code>doctor</code> reports
+    what is and is not set up and exits non-zero if a run would be degraded, so
+    it works in CI.</p>
+  </div>
+<pre><span class="c"># the part that needs nothing</span>
+cargo run --bin nbench -- doctor
+cargo run --bin nbench -- run --config configs/baselines.toml
+
+<span class="c"># with an endpoint (endpoint/ ships the standalone MCP server Nudox lacks)</span>
+./endpoint/target/release/nudox-endpoint --package "$HOME/.cargo/registry/src"/*/memchr-2.8.3
+export NUDOX_MCP_URL=…  NUDOX_MCP_TOKEN=…
+cargo run --bin nbench -- surface --per-tool
+cargo run --bin nbench -- run --config configs/default.toml
+cargo run --bin nbench -- run --config configs/ablations.toml</pre>
+  <p class="note" style="margin-top:1.1rem">Full walkthrough in
+  <code>docs/RUNNING.md</code>; the reasoning behind each measurement choice in
+  <code>docs/DESIGN.md</code>; how to write a scenario in
+  <code>docs/SCENARIOS.md</code>.</p>
+</section>
+
+<footer>
+  <p>Every figure and table on this page is derived from
+  <code>results/2026-08-30/report.json</code>, run
+  <code>run-2026-08-30-165221</code>, recorded 2026-08-30. Nothing is
+  illustrative. Where this page differs slightly from the earlier chart deck in
+  the same directory, the numbers here were recomputed from the JSON: ripgrep's
+  cost is 9,658 tokens per scenario, not 9,392, making the overall ratio
+  7.6&times; rather than 7.4&times;.</p>
+</footer>
+
+</div>
