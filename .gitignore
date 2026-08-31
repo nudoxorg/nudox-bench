@@ -3,3 +3,7 @@
 .env
 *.log
 endpoint/target/
+/results.db
+/results.db-wal
+/results.db-shm
+__pycache__/

@@ -139,6 +139,24 @@ that cannot fail, which is the most common way to write a worthless one.
 
 See [docs/SCENARIOS.md](docs/SCENARIOS.md).
 
+## Browsing results
+
+Every run this repo has produced goes into one SQLite file, and two scripts
+read it — because "how did that run go" is answered by `report.json`, while
+"did this get better", "which scenario is flaky" and "what did the embedder
+buy" are questions *across* runs.
+
+```bash
+python3 scripts/bench_web.py --open     # ingest, then browse on 127.0.0.1:8765
+python3 scripts/bench_db.py compare <run-a> <run-b>
+```
+
+The browser gives you the results table, four charts drawn on demand, a
+scenario matrix where **clicking a cell shows the tool calls behind it**, and a
+diff against any second run. Standard library, matplotlib and one vendored copy
+of htmx: no framework, no build step, no network.
+See [docs/RESULTS-DB.md](docs/RESULTS-DB.md).
+
 ## Results
 
 The first full run — all five Nudox policies against both baselines — is in
