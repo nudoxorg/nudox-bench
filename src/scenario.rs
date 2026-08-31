@@ -416,13 +416,10 @@ pub fn expand_path(raw: &str) -> String {
     let mut rest = raw;
 
     if let Some(stripped) = rest.strip_prefix("~/") {
-        match std::env::var("HOME") {
-            Ok(home) => {
-                out.push_str(&home);
-                out.push('/');
-                rest = stripped;
-            }
-            Err(_) => {}
+        if let Ok(home) = std::env::var("HOME") {
+            out.push_str(&home);
+            out.push('/');
+            rest = stripped;
         }
     }
 

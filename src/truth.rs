@@ -72,6 +72,16 @@ pub struct DeterministicScore {
     /// See [`crate::adapter::Attempt::primary_context`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub primary_strict_recall: Option<f64>,
+    /// Distractors present in the adapter's **answer**, as opposed to anywhere
+    /// in what it surfaced.
+    ///
+    /// The two differ whenever a near-miss symbol appears only in text the
+    /// adapter used to *find* its answer: a grep context window, or a `search`
+    /// listing that a later `refs` call answered from. `distractors` stays the
+    /// number that decides `passed`; this one says how much of it the answer
+    /// is actually responsible for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primary_distractors: Option<usize>,
 }
 
 impl DeterministicScore {
@@ -230,6 +240,7 @@ pub fn score(scenario: &Scenario, returned_text: &str) -> DeterministicScore {
         // evidence from surrounding text; this function scores whatever text
         // it is handed and does not know which kind it is.
         primary_strict_recall: None,
+        primary_distractors: None,
     }
 }
 
@@ -239,6 +250,65 @@ mod tests {
 
     fn tiers(fact: &str, text: &str) -> MatchTier {
         match_fact(fact, text, &text.to_ascii_lowercase(), &normalize_path(text))
+    }
+
+    /// The whole point of splitting answer from navigation.
+    ///
+    /// A `search` listing that finds a symbol legitimately contains its
+    /// near-names; the `refs` answer built from it does not. Scored against
+    /// the union, the adapter is charged for a distractor its answer never
+    /// contained — the `go/uuid/callers-parse` case in
+    /// `run-2026-08-30-225507`.
+    #[test]
+    fn a_distractor_in_navigation_is_not_one_in_the_answer() {
+        let scenario = crate::testing::scenario_with_truth(Truth {
+            mode: TruthMode::SymbolSet,
+            all_of: vec!["MustParse".into()],
+            any_of: vec![],
+            none_of: vec!["ParseBytes".into()],
+            oracle: None,
+            sources: vec![],
+        });
+
+        // What `search` returned while locating `Parse`.
+        let navigation = "go:github.com/google/uuid::ParseBytes[function]\n\
+                          go:github.com/google/uuid::Parse[function]";
+        // What `refs` answered with.
+        let answer = "go:github.com/google/uuid::MustParse[function]";
+        let union = format!("{navigation}\n\n{answer}");
+
+        let whole = score(&scenario, &union);
+        assert_eq!(whole.distractors, 1, "the union does contain the near-name");
+        assert!(!whole.passed, "and that is what decides the verdict today");
+
+        let only_answer = score(&scenario, answer);
+        assert_eq!(only_answer.distractors, 0, "the answer does not");
+        assert_eq!(only_answer.strict_recall, 1.0);
+    }
+
+    /// Word boundaries do the work here, and it is worth pinning against a
+    /// real payload: every `ParseBytes` in the `uuid` search response of
+    /// 2026-08-31 was inside a longer identifier, so none of them is the
+    /// distractor and the run correctly recorded none.
+    #[test]
+    fn a_longer_identifier_is_not_the_distractor() {
+        for line in [
+            "go:github.com/google/uuid::BenchmarkParseBytes[function]",
+            "go:github.com/google/uuid::FuzzParseBytes[function]",
+            "go:github.com/google/uuid::BenchmarkParseBytesUnsafe[function]",
+            "  fn parseBytesCopy(b: [u8])",
+        ] {
+            assert_eq!(
+                tiers("ParseBytes", line),
+                MatchTier::Absent,
+                "{line} must not be credited as ParseBytes"
+            );
+        }
+        // The bare declaration, however, is exactly the distractor.
+        assert_eq!(
+            tiers("ParseBytes", "go:github.com/google/uuid::ParseBytes[function]"),
+            MatchTier::Strict
+        );
     }
 
     #[test]

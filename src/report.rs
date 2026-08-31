@@ -92,6 +92,10 @@ pub struct AdapterSummary {
     /// unresolved text rather than resolved symbols.
     pub mean_resolution_gap: f64,
     pub total_distractors: usize,
+    /// Of `total_distractors`, how many were in an adapter's *answer* rather
+    /// than in text it surfaced while finding one. Equal to
+    /// `total_distractors` for an adapter that cannot tell the two apart.
+    pub answer_distractors: usize,
     /// Response + request tokens, summed over attempted scenarios.
     pub marginal_tokens: TokenCount,
     /// The fixed surface cost, paid once per session.
@@ -180,6 +184,10 @@ impl RunReport {
             entry.mean_loose_recall += outcome.score.loose_recall;
             entry.mean_resolution_gap += outcome.score.resolution_gap();
             entry.total_distractors += outcome.score.distractors;
+            entry.answer_distractors += outcome
+                .score
+                .primary_distractors
+                .unwrap_or(outcome.score.distractors);
             entry.marginal_tokens = entry.marginal_tokens + outcome.attempt.cost.marginal();
             entry.mean_tool_calls += outcome.attempt.tool_calls as f64;
             entry.total_elapsed_ms += outcome.attempt.elapsed_ms;
@@ -278,7 +286,13 @@ impl RunReport {
                 s.mean_primary_strict_recall,
                 s.mean_loose_recall,
                 s.mean_resolution_gap,
-                s.total_distractors,
+                if s.answer_distractors == s.total_distractors {
+                    format!("{}", s.total_distractors)
+                } else {
+                    // A distractor the answer never contained is a different
+                    // finding from one it did, and collapsing them hides it.
+                    format!("{}→{}", s.total_distractors, s.answer_distractors)
+                },
                 s.tokens_per_scenario(),
                 s.tokens_per_pass()
                     .map(|v| format!("{v:.0}"))
@@ -421,6 +435,43 @@ mod tests {
             judge: None,
             attempt: attempt(adapter, unsupported, tokens),
         }
+    }
+
+    /// A distractor the answer never contained still fails the scenario, but
+    /// the table has to say so, or the reader cannot tell "the tool offered a
+    /// near-miss" from "the tool found one while looking".
+    #[test]
+    fn distractor_provenance_reaches_the_table() {
+        let mut only_while_looking = outcome_for("a", false, false, 100);
+        only_while_looking.score.distractors = 1;
+        only_while_looking.score.primary_distractors = Some(0);
+
+        let mut in_the_answer = outcome_for("b", false, false, 100);
+        in_the_answer.score.distractors = 1;
+        in_the_answer.score.primary_distractors = Some(1);
+
+        let report = RunReport {
+            run_id: "r".into(),
+            timestamp: "t".into(),
+            adapters: vec![
+                AdapterInfo { name: "a".into(), description: String::new(), resident: TokenCount::default() },
+                AdapterInfo { name: "b".into(), description: String::new(), resident: TokenCount::default() },
+            ],
+            outcomes: vec![only_while_looking, in_the_answer],
+        };
+
+        let summaries = report.summarize();
+        let a = summaries.iter().find(|s| s.adapter == "a").unwrap();
+        assert_eq!((a.total_distractors, a.answer_distractors), (1, 0));
+        let b = summaries.iter().find(|s| s.adapter == "b").unwrap();
+        assert_eq!((b.total_distractors, b.answer_distractors), (1, 1));
+
+        let markdown = report.to_markdown();
+        assert!(markdown.contains("1→0"), "provenance must be visible: {markdown}");
+        assert!(
+            markdown.contains("| 1 |"),
+            "and a distractor genuinely in the answer stays a plain count"
+        );
     }
 
     #[test]

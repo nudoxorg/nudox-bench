@@ -429,7 +429,7 @@ impl Adapter for NudoxAdapter {
         // error, precisely so a caller can tell those apart.
         if let Some(loaded) = &self.loaded {
             let lineage = scenario.target.lineage();
-            if !loaded.iter().any(|l| *l == lineage) {
+            if !loaded.contains(&lineage) {
                 return Attempt::unsupported(
                     &self.policy.name,
                     scenario,
@@ -472,7 +472,8 @@ impl Adapter for NudoxAdapter {
                     "from_version": scenario.target.version,
                     "to_version": to,
                 });
-                self.call(&mut builder, "diff", args.clone(), &mut error).await;
+                self.call(&mut builder, "diff", args.clone(), &mut error, Evidence::Answer)
+                    .await;
 
                 // Follow the cursor the tool hands back.
                 //
@@ -503,14 +504,16 @@ impl Adapter for NudoxAdapter {
                         let mut paged = args.clone();
                         paged["cursor"] = json!(cursor);
                         seen = Some(cursor);
-                        self.call(&mut builder, "diff", paged, &mut error).await;
+                        self.call(&mut builder, "diff", paged, &mut error, Evidence::Answer)
+                            .await;
                     }
                 }
                 return builder.finish(error);
             }
             TaskKind::Overview if self.policy.allows("packages") => {
                 let args = json!({ "package": scenario.target.lineage() });
-                self.call(&mut builder, "packages", args, &mut error).await;
+                self.call(&mut builder, "packages", args, &mut error, Evidence::Answer)
+                    .await;
                 if self.policy.oneshot {
                     return builder.finish(error);
                 }
@@ -524,7 +527,8 @@ impl Adapter for NudoxAdapter {
             && self.policy.allows("graph")
         {
             if self.policy.allows("schema") {
-                self.call(&mut builder, "schema", json!({}), &mut error).await;
+                self.call(&mut builder, "schema", json!({}), &mut error, Evidence::Navigation)
+                    .await;
                 if self.policy.oneshot {
                     return builder.finish(error);
                 }
@@ -540,7 +544,8 @@ impl Adapter for NudoxAdapter {
                             .unwrap_or_default(),
                     }
                 });
-                self.call(&mut builder, "graph", args, &mut error).await;
+                self.call(&mut builder, "graph", args, &mut error, Evidence::Answer)
+                        .await;
                 return builder.finish(error);
             }
         }
@@ -550,8 +555,26 @@ impl Adapter for NudoxAdapter {
             return Attempt::unsupported(&self.policy.name, scenario, "policy forbids `search`");
         }
         let search_args = self.search_args(scenario);
+        // Is this search the answer, or the way to it?
+        //
+        // It is the answer when nothing can follow it — a one-call policy, or
+        // one restricted to `search` — and when the question is itself a
+        // listing (`Overview` enumerates a surface; `Search`/`Implement` hand
+        // the hits straight to a judge). Otherwise it is the directory lookup
+        // before `refs` or `read`, and scoring it as the reply would charge
+        // the adapter for every near-name the index correctly offered.
+        let search_role = if self.policy.oneshot
+            || !self.policy.allows("refs") && !self.policy.allows("read")
+            || matches!(
+                scenario.task,
+                TaskKind::Search | TaskKind::Implement | TaskKind::Overview
+            ) {
+            Evidence::Answer
+        } else {
+            Evidence::Navigation
+        };
         let hits = self
-            .call_search(&mut builder, search_args, &mut error)
+            .call_search(&mut builder, search_args, &mut error, search_role)
             .await;
 
         if self.policy.oneshot || matches!(scenario.task, TaskKind::Search | TaskKind::Implement) {
@@ -585,7 +608,8 @@ impl Adapter for NudoxAdapter {
                         "out"
                     };
                     let args = json!({ "key": identity, "direction": direction });
-                    self.call(&mut builder, "refs", args, &mut error).await;
+                    self.call(&mut builder, "refs", args, &mut error, Evidence::Answer)
+                        .await;
                 }
             }
             TaskKind::Definition
@@ -599,13 +623,15 @@ impl Adapter for NudoxAdapter {
                         "source"
                     };
                     let args = json!({ "keys": [identity], "format": format });
-                    self.call(&mut builder, "read", args, &mut error).await;
+                    self.call(&mut builder, "read", args, &mut error, Evidence::Answer)
+                        .await;
                 }
             }
             TaskKind::Implementors => {
                 if self.policy.allows("graph") {
                     if self.policy.allows("schema") {
-                        self.call(&mut builder, "schema", json!({}), &mut error).await;
+                        self.call(&mut builder, "schema", json!({}), &mut error, Evidence::Navigation)
+                    .await;
                     }
                     if let Some(query) = graph_query_for(scenario) {
                         let args = json!({
@@ -615,7 +641,8 @@ impl Adapter for NudoxAdapter {
                                 "name": scenario.probe.name.clone().unwrap_or_default(),
                             }
                         });
-                        self.call(&mut builder, "graph", args, &mut error).await;
+                        self.call(&mut builder, "graph", args, &mut error, Evidence::Answer)
+                        .await;
                     }
                 }
             }
@@ -686,6 +713,7 @@ impl NudoxAdapter {
         tool: &str,
         args: Value,
         error: &mut Option<String>,
+        role: Evidence,
     ) {
         let started = Instant::now();
         match self.client.call_tool(tool, args.clone()).await {
@@ -697,6 +725,9 @@ impl NudoxAdapter {
                     response.elapsed,
                     response.is_error,
                 );
+                if role == Evidence::Answer {
+                    builder.primary(&response.text);
+                }
             }
             Err(e) => {
                 let message = format!("{tool}: {e}");
@@ -711,6 +742,7 @@ impl NudoxAdapter {
         builder: &mut AttemptBuilder,
         args: Value,
         error: &mut Option<String>,
+        role: Evidence,
     ) -> Vec<Hit> {
         let started = Instant::now();
         match self.client.call_tool("search", args.clone()).await {
@@ -723,6 +755,9 @@ impl NudoxAdapter {
                     response.elapsed,
                     response.is_error,
                 );
+                if role == Evidence::Answer {
+                    builder.primary(&response.text);
+                }
                 hits
             }
             Err(e) => {
@@ -733,6 +768,36 @@ impl NudoxAdapter {
             }
         }
     }
+}
+
+/// Whether a call produced the adapter's **answer**, or the looking-around it
+/// did to find it.
+///
+/// # Why this distinction has to exist
+///
+/// Scoring reads everything an adapter surfaced, concatenated. For a one-shot
+/// tool that is the same thing as its answer. For a tool that navigates —
+/// `search` to locate a symbol, then `refs` to answer about it — it is not,
+/// and conflating the two scores the directory lookup as if it were the reply.
+///
+/// Measured on `go/uuid/callers-parse` in `run-2026-08-30-225507`: Nudox's
+/// `refs` response listed 21 inbound callers and **no** `ParseBytes`, which is
+/// correct — `ParseBytes` has its own parsing path and never calls `Parse`
+/// (verified at `uuid.go:120`). But the `search` step that found the symbol
+/// listed `ParseBytes`, correctly, as a declaration matching the query
+/// "Parse". The scenario's distractor rule then fired against the union, and
+/// the run recorded a distractor for an answer that never contained one.
+///
+/// Penalising that punishes exactly the multi-step behaviour a resolved index
+/// exists to enable, and rewards a tool that discards its working. So the
+/// answer is marked, the navigation is not, and the report shows both. What
+/// `passed` means is deliberately unchanged — see `docs/DESIGN.md`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Evidence {
+    /// This response is what the adapter is claiming as its answer.
+    Answer,
+    /// This response is how it found the thing it then answered about.
+    Navigation,
 }
 
 /// Choose the search hit the scenario is actually asking about.
@@ -798,7 +863,7 @@ fn segments(text: &str) -> Vec<String> {
     }
 
     cleaned
-        .split(|c| c == '.' || c == '/' || c == ':')
+        .split(['.', '/', ':'])
         .map(|segment| {
             segment
                 .trim_matches(|c: char| c == '\'' || c == '"' || c == '`')
@@ -829,7 +894,7 @@ fn last_segment(query: &str) -> String {
         return query.to_owned();
     }
     query
-        .rsplit(|c| c == '.' || c == '/' || c == ':')
+        .rsplit(['.', '/', ':'])
         .find(|segment| !segment.is_empty())
         .unwrap_or(query)
         .to_owned()

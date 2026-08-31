@@ -118,8 +118,9 @@ pub async fn run(
             // matched, score that subset too. The difference is how much of
             // the recall came from surrounding text rather than a hit.
             if let Some(primary) = attempt.primary_context.as_deref() {
-                score.primary_strict_recall =
-                    Some(crate::truth::score(scenario, primary).strict_recall);
+                let answer = crate::truth::score(scenario, primary);
+                score.primary_strict_recall = Some(answer.strict_recall);
+                score.primary_distractors = Some(answer.distractors);
             }
 
             let verdict = match (&judge, score.judged, attempt.unsupported.is_some()) {

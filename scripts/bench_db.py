@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS outcomes (
     matched       REAL,           -- strict recall over matched evidence only
     gap           REAL,           -- loose - strict
     distractors   INTEGER,
+    answer_distr  INTEGER,        -- of those, how many were in the answer
     any_of_ok     INTEGER,
     judged        INTEGER,
     unsupported   TEXT,           -- the decline reason, verbatim
@@ -132,6 +133,7 @@ SELECT
     AVG(CASE WHEN o.passed IS NOT NULL THEN o.loose   END) AS loose,
     AVG(CASE WHEN o.passed IS NOT NULL THEN o.gap     END) AS gap,
     SUM(COALESCE(o.distractors, 0))                       AS distractors,
+    SUM(COALESCE(o.answer_distr, o.distractors, 0))       AS answer_distractors,
     AVG(CASE WHEN o.passed IS NOT NULL THEN o.marginal END) AS tok_per_scenario,
     AVG(CASE WHEN o.passed IS NOT NULL THEN o.tool_calls END) AS calls
 FROM outcomes o
@@ -218,10 +220,10 @@ def ingest_report(conn: sqlite3.Connection, path: Path) -> tuple[str, int]:
 
             cur = conn.execute(
                 "INSERT INTO outcomes (run_id, scenario_id, family, adapter, passed,"
-                " strict, loose, matched, gap, distractors, any_of_ok, judged,"
-                " unsupported, tool_calls, elapsed_ms, req_cl100k, resp_cl100k,"
+                " strict, loose, matched, gap, distractors, answer_distr, any_of_ok,"
+                " judged, unsupported, tool_calls, elapsed_ms, req_cl100k, resp_cl100k,"
                 " req_o200k, resp_o200k, marginal, context_chars)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     run_id,
                     outcome["scenario_id"],
@@ -233,6 +235,7 @@ def ingest_report(conn: sqlite3.Connection, path: Path) -> tuple[str, int]:
                     matched,
                     None if strict is None or loose is None else max(0.0, loose - strict),
                     score.get("distractors"),
+                    score.get("primary_distractors"),
                     1 if score.get("any_of_satisfied") else 0,
                     1 if score.get("judged") else 0,
                     unsupported,

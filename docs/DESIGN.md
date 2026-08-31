@@ -85,6 +85,47 @@ Two things follow, and both are worth more than the original claim:
   detect recall manufactured by a context window. That is a gap in the
   measurement, not in the tool under test.
 
+## The answer, and the looking-around
+
+Scoring reads everything an adapter surfaced, concatenated in order. For a
+one-shot tool that is the same thing as its answer. For a tool that navigates
+it is not, and the difference decides scenarios.
+
+**Measured on `go/uuid/callers-parse`, `run-2026-08-30-225507`.** Nudox's
+`refs` response listed 21 inbound callers of `Parse` and contained **no**
+`ParseBytes` — which is correct: `ParseBytes` has its own parsing path and
+never calls `Parse`, verified by reading `uuid.go:120`. But the `search` step
+that located the symbol *did* list `ParseBytes`, also correctly, as a
+declaration whose name matches the query "Parse". The distractor rule fired
+against the union, and the run recorded a distractor against an answer that
+never contained one.
+
+The same shape had already appeared on the other side of the comparison:
+ripgrep's `-B 12` window drags in lines it did not match, and
+`results/2026-08-30/payload-audit.md` found three verdicts resting on them.
+One rule, two tools.
+
+So an adapter can now mark which of its output is the **answer** and which is
+the **navigation** that found it (`Attempt::primary_context`), and the report
+carries both readings:
+
+* `matched` — strict recall counting only the answer;
+* `distractors` — rendered `total→answer` when the two differ.
+
+**What `passed` means is deliberately unchanged.** Two reasons. It would
+silently invalidate comparison with every run already recorded, which is the
+one thing a benchmark may not do quietly. And the case is genuinely arguable:
+a distractor an agent reads is a distractor it can be misled by, even if the
+tool would not have offered it as the answer. The counter-argument is equally
+real — scoring the directory lookup as the reply punishes exactly the
+multi-step behaviour a resolved index exists to enable, and rewards a tool
+that discards its working.
+
+Both numbers are now visible, which is the position this benchmark takes
+everywhere else: report both, and let the reader weigh them. Deciding which
+one `passed` should follow is a question for whoever is reading the results,
+not one to settle by changing a constant.
+
 ## <a id="no-headline-number"></a>No headline number
 
 There is no weighted composite score, deliberately. Four things are measured

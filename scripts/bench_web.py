@@ -181,15 +181,24 @@ def render_summary(conn, run_id: str) -> str:
         if r["strict"] and r["matched"] is not None and r["strict"] - r["matched"] > 0.01:
             gap_note = ' title="%.0f%% of this recall came from lines printed around a match"' % (
                 (r["strict"] - r["matched"]) / r["strict"] * 100)
+        # A distractor the answer never contained is a different finding from
+        # one it did, so the two are shown as `total -> answer` when they part.
+        total_d = r["distractors"] or 0
+        answer_d = r["answer_distractors"] if "answer_distractors" in r.keys() else total_d
+        answer_d = total_d if answer_d is None else answer_d
+        distr = "%d" % total_d if answer_d == total_d else "%d&rarr;%d" % (total_d, answer_d)
+        distr_note = "" if answer_d == total_d else (
+            ' title="%d appeared only in text the adapter used to find its answer"'
+            % (total_d - answer_d))
         out.append(
             '<tr><td><span class="dot" style="background:%s"></span>%s</td>'
             '<td class="num">%d/%d · %.0f%%</td><td class="num">%d</td><td class="num">%d</td>'
             '<td class="num">%.2f</td><td class="num"%s>%.2f</td><td class="num">%.2f</td>'
-            '<td class="num">%.2f</td><td class="num">%d</td><td class="num">%.0f</td>'
+            '<td class="num">%.2f</td><td class="num"%s>%s</td><td class="num">%.0f</td>'
             '<td class="num">%.1f</td></tr>' % (
                 colour(r["adapter"]), esc(r["adapter"]), r["passed"], r["attempted"], rate,
                 r["declined"], r["unscored"], r["strict"] or 0, gap_note, r["matched"] or 0,
-                r["loose"] or 0, r["gap"] or 0, r["distractors"] or 0,
+                r["loose"] or 0, r["gap"] or 0, distr_note, distr,
                 r["tok_per_scenario"] or 0, r["calls"] or 0))
     out.append("</tbody></table></div>")
     return "".join(out)
