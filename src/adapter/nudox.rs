@@ -458,7 +458,40 @@ impl Adapter for NudoxAdapter {
                     "from_version": scenario.target.version,
                     "to_version": to,
                 });
-                self.call(&mut builder, "diff", args, &mut error).await;
+                self.call(&mut builder, "diff", args.clone(), &mut error).await;
+
+                // Follow the cursor the tool hands back.
+                //
+                // A real agent that did not find its answer on page one asks
+                // for page two — `diff` renders a `next:` line precisely so it
+                // can. Stopping at page one measured the harness's patience
+                // rather than the tool's reach: on
+                // `rust/hashbrown/diff-0.16.1-to-0.17.1` the 2026-08-30 run
+                // took a single 10,000-character page of 50 changes, ordered
+                // by path, which `alloc` and `control` internals filled
+                // entirely — all four expected `HashMap` methods were absent
+                // from it, and the scenario scored 0%.
+                //
+                // Bounded by the scenario's own `max_tool_calls`, so a large
+                // diff cannot spend an unbounded budget, and by a cursor that
+                // must actually advance, so a server repeating itself cannot
+                // loop here.
+                if !self.policy.oneshot {
+                    let budget = scenario.budget.max_tool_calls.max(1);
+                    let mut seen: Option<String> = None;
+                    while builder.tool_calls() < budget {
+                        let Some(cursor) = next_cursor(builder.context()) else {
+                            break;
+                        };
+                        if seen.as_deref() == Some(cursor.as_str()) {
+                            break;
+                        }
+                        let mut paged = args.clone();
+                        paged["cursor"] = json!(cursor);
+                        seen = Some(cursor);
+                        self.call(&mut builder, "diff", paged, &mut error).await;
+                    }
+                }
                 return builder.finish(error);
             }
             TaskKind::Overview if self.policy.allows("packages") => {
@@ -688,6 +721,21 @@ impl NudoxAdapter {
     }
 }
 
+/// The pagination cursor a response offers, if it offers one.
+///
+/// The renderer writes it as a trailing ``next: `50` `` line, and the value is
+/// opaque — it is copied back verbatim and never parsed or used to infer a
+/// page size, which is the contract the tool's own error text states.
+/// Scanning from the end matters: the accumulated context holds every page
+/// fetched so far, and only the newest cursor is live.
+fn next_cursor(text: &str) -> Option<String> {
+    text.lines()
+        .rev()
+        .find_map(|line| line.trim().strip_prefix("next:"))
+        .map(|rest| rest.trim().trim_matches('`').trim().to_owned())
+        .filter(|cursor| !cursor.is_empty())
+}
+
 /// Which package lineages the corpus holds, from a `packages` response.
 ///
 /// Reads the Markdown, because that is what an agent sees. The renderer
@@ -832,6 +880,24 @@ package: `npm:commander`
     fn an_unloaded_package_is_simply_absent_from_the_census() {
         let loaded = parse_lineages(&Value::Null, "## Packages · 0\n\n(none)\n");
         assert!(loaded.is_empty());
+    }
+
+    /// The cursor is read off the *last* `next:` line, because the context
+    /// accumulates every page fetched so far and only the newest is live.
+    /// Shape taken verbatim from the hashbrown diff payload in
+    /// run-2026-08-30-165221.
+    #[test]
+    fn the_live_cursor_is_the_last_one_offered() {
+        let one_page = "| decl | path | added |\n\nnext: `50`";
+        assert_eq!(next_cursor(one_page).as_deref(), Some("50"));
+
+        let two_pages = "page one\n\nnext: `50`\n\npage two\n\nnext: `100`";
+        assert_eq!(next_cursor(two_pages).as_deref(), Some("100"));
+
+        // A final page offers nothing, and neither does an empty marker.
+        assert_eq!(next_cursor("summary: 50 changed\n| a | b |"), None);
+        assert_eq!(next_cursor("next: ``"), None);
+        assert_eq!(next_cursor(""), None);
     }
 
     #[test]

@@ -308,23 +308,54 @@ The binary is resolved from `NUDOX_GO_ORACLE_BIN` if set, else the bare name
 `nudox-go-oracle <module-root-dir>` — oracle JSON on stdout, diagnostics on
 stderr, non-zero only on a fatal error.
 
+> **`go` must also be on the endpoint's `PATH` at run time.** Pointing at the
+> oracle binary is necessary but not sufficient: the oracle drives
+> `go/packages`, which shells out to the `go` command itself. With the binary
+> built and `NUDOX_GO_ORACLE_BIN` set but no `go` on `PATH`, the package fails
+> to load with
+> `oracle: loading packages under …: err: go command required, not found`.
+> On a machine with nix and no system Go:
+> ```bash
+> export PATH=$(dirname $(nix shell nixpkgs#go --command which go)):$PATH
+> ```
+
 Without it, `go:github.com/google/uuid` never loads and the two Go scenarios
 are recorded as **declined**, not failed.
 
 ### 3.3 Python
 
-The Python producer needs a manifest, and an installed `requests` in
-`site-packages` has none — no `pyproject.toml`, no `setup.py`. So point the
-endpoint at a **source checkout** instead of the installed package:
+Python needs **two** things, and the second one is a rebuild.
+
+**1. The `pyrefly` feature must be enabled.** `endpoint/Cargo.toml` builds
+`nudox-engine` with `default-features = false`, and the Python producer is
+registered only under `pyrefly`. Without it every pypi package fails to load
+with `toolchain missing for python (package pypi:requests)` — which is
+deliberate upstream: an unregistered producer is honest, whereas a registered
+one returning an empty oracle would make *"we cannot read this"*
+indistinguishable from *"this package has no public API"*.
+
+This is **not** implied by `nudox-languages` enabling `pyrefly` by default. The
+pyrefly crates compile either way — they are in the endpoint's lockfile — but
+registration is gated separately. `endpoint/Cargo.toml` now asks for the
+feature explicitly; a build from before 2026-08-30 needs
+`cargo build --release` again to pick it up.
+
+**2. The package needs a manifest.** An installed `requests` in
+`site-packages` has no `pyproject.toml` and no `setup.py`, so `language_for()`
+cannot classify it. Cloning upstream would introduce version skew against the
+tree ripgrep reads, so the cheaper and more honest option is to wrap the
+installed source itself:
 
 ```bash
-git clone --depth 1 --branch v2.31.0 https://github.com/psf/requests /tmp/requests
-cd endpoint && ./target/release/nudox-endpoint --package /tmp/requests=requests@2.31.0 …
+mkdir -p /tmp/requests-2.34.2
+cp -r "$PY_SITE/requests" /tmp/requests-2.34.2/requests
+printf '[project]\nname = "requests"\nversion = "2.34.2"\n' > /tmp/requests-2.34.2/pyproject.toml
+./endpoint/target/release/nudox-endpoint --package /tmp/requests-2.34.2=requests@2.34.2 …
 ```
 
-Keep the scenario's `target.root` pointing at whatever ripgrep should read, and
-make sure the two are the same version — otherwise you are back to measuring
-skew.
+That root is byte-identical to what ripgrep reads (`diff -r` it), so the two
+adapters answer about exactly the same code and there is no skew to argue
+about.
 
 ### 3.4 The judge
 
@@ -454,6 +485,8 @@ There is deliberately no single headline score — see
 | `~sem:unavailable(ModelFailed)` | model configured but unloadable | check the file, its sha256, and available memory |
 | `is not loaded in this corpus (loaded: …)` | Nudox was never given that package | add it with `--package`, or run with `--ensure-indexed` |
 | `WARN <pkg> failed to load` | a producer is missing its oracle | §3.2 for Go; §3.3 for Python |
+| `oracle: loading packages under …: go command required, not found` | the Go oracle is installed but `go` itself is not on the endpoint's `PATH` — the oracle shells out to it | §3.2; put a Go toolchain on `PATH` before starting the endpoint |
+| `toolchain missing for python (package pypi:…)` | the build has no Python producer registered | rebuild the endpoint: the `pyrefly` feature, §3.3 |
 | `unscored` on the implementation scenarios | no judge key | `export OPENROUTER_API_KEY` and pass `--judge` |
 | `~ablation:not-exercised` on `nudox-keys` | `search` rendered addresses, so no 64-hex key crossed the wire | expected today; it is reported rather than papered over |
 | a run takes minutes before answering anything | indexing runs a real compiler front end | expected; keep one endpoint up across runs |

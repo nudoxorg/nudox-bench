@@ -40,7 +40,19 @@ path = "src/main.rs"
 #
 # The cost is that every start re-runs the producers. For the corpus this
 # benchmark uses that is tens of seconds.
-nudox-engine = { path = "../../Backend/workspace/nudox-engine", default-features = false }
+#
+# `features = ["pyrefly"]` registers the Python producer. Without it the
+# engine reports `toolchain missing for python` for every pypi package and
+# declines it — which is deliberate upstream (an unregistered producer is
+# honest; a registered one returning an empty oracle would make "we cannot
+# read this" indistinguishable from "this package has no public API"). It is
+# *not* implied by nudox-languages enabling pyrefly by default: the crates
+# compile either way, but registration is gated separately, so a build with
+# `default-features = false` and no explicit opt-in silently has no Python.
+# Measured on 2026-08-30: `requests` failed to load with exactly that message.
+nudox-engine = { path = "../../Backend/workspace/nudox-engine", default-features = false, features = [
+    "pyrefly",
+] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "time"] }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
