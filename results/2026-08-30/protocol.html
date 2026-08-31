@@ -1308,9 +1308,24 @@ footer {
     not.</strong> <code>oneshot</code> saves 41% of the tokens and loses a
     scenario. <code>search-only</code> is 4.3&times; cheaper than the full
     surface and still answers two — a defensible default for a tight budget, and
-    an argument for making the first response denser. <code>graph-first</code>
-    costs the same as full and answers less: the schema card is cheap at 134
-    tokens, but writing a correct query against it is not free.</li>
+    an argument for making the first response denser.</li>
+
+    <li><strong>Retracted: everything this run said about the escape
+    hatch.</strong> This page originally read "<em>graph-first costs the same
+    as full and answers less: the schema card is cheap at 134 tokens, but
+    writing a correct query against it is not free</em>". Reading the
+    transcripts afterwards showed why: <strong>every <code>graph</code> call
+    the benchmark had ever made failed</strong>, in every run, with
+    <code>Field Package received an invalid value for argument name:
+    $package</code>. The adapter sent its variables under
+    <code>variables</code> where the tool names the field <code>args</code>,
+    entered at a root the schema does not offer, and walked an edge
+    (<code>referencedBy</code>) that does not exist. The ablation was measuring
+    an error message, so it never tested the thing it was named after. Fixed
+    and re-measured, <code>graph-first</code> answers <strong>5 of 5</strong>
+    at strict 1.00 — see <code>results/2026-08-31-graph-fixed/</code>. The
+    lesson is the harness's, again: a tool that returns an error and a tool
+    that returns a poor answer look identical in a pass rate.</li>
 
     <li><strong>ripgrep is a much stronger baseline than it is usually given
     credit for — and its numbers move with its flags.</strong> It passes 5 of 7

@@ -471,6 +471,19 @@ impl Adapter for NudoxAdapter {
                     "package": scenario.target.lineage(),
                     "from_version": scenario.target.version,
                     "to_version": to,
+                    // Ask for the whole diff, not the default 50 rows.
+                    //
+                    // A cross-version diff lists changes ordered by path, and
+                    // a question about one module is answered on whichever
+                    // page that module falls on. Taking the default page and
+                    // then paging is how `hashbrown` reached 75% — three of
+                    // four methods, with `insert_entry_with_key` still past
+                    // the cut. The right correction is to ask for a bigger
+                    // page rather than to raise the scenario's call budget
+                    // until it passes: 500 is the tool's documented cap, and
+                    // asking for it is what an agent that wants a complete
+                    // answer does.
+                    "limit": 500,
                 });
                 self.call(&mut builder, "diff", args.clone(), &mut error, Evidence::Answer)
                     .await;
@@ -533,17 +546,8 @@ impl Adapter for NudoxAdapter {
                     return builder.finish(error);
                 }
             }
-            if let Some(query) = graph_query_for(scenario) {
-                let args = json!({
-                    "query": query,
-                    "variables": {
-                        "package": scenario.target.package,
-                        "name": scenario.probe.name.clone()
-                            .or_else(|| scenario.probe.symbol.as_ref()
-                                .and_then(|s| s.rsplit("::").next().map(str::to_owned)))
-                            .unwrap_or_default(),
-                    }
-                });
+            if let Some((query, query_args)) = graph_query_for(scenario) {
+                let args = json!({ "query": query, "args": query_args, "limit": 500 });
                 self.call(&mut builder, "graph", args, &mut error, Evidence::Answer)
                         .await;
                 return builder.finish(error);
@@ -612,10 +616,7 @@ impl Adapter for NudoxAdapter {
                         .await;
                 }
             }
-            TaskKind::Definition
-            | TaskKind::Signature
-            | TaskKind::Members
-            | TaskKind::Overview => {
+            TaskKind::Definition | TaskKind::Signature | TaskKind::Members => {
                 if self.policy.allows("read") {
                     let format = if scenario.task == TaskKind::Signature {
                         "signature"
@@ -627,20 +628,56 @@ impl Adapter for NudoxAdapter {
                         .await;
                 }
             }
+            // Enumerating a surface is not a search question.
+            //
+            // `search` ranks a *name* section built from "exact and prefix
+            // name matches", so a query can only ever reach symbols sharing a
+            // prefix with it. Asking it for `memchr`'s public surface returns
+            // `memchr`, `memchr2`, `memchr_iter` … and can never return
+            // `memrchr`, because that name does not start with the query.
+            // Measured: 60% strict recall on every Nudox policy across every
+            // run, with all six `memrchr*` facts absent and all nine
+            // `memchr*` ones found — a shape that is the query's, not the
+            // index's.
+            //
+            // Following it with `read` made that worse rather than better:
+            // an overview scenario names no `probe.symbol`, so the read
+            // landed on whichever hit ranked first — in
+            // `run-2026-08-30-225507` that was
+            // `arch::x86_64::avx2::memchr[module]`, an internal module, and
+            // the call bought nothing.
+            //
+            // `graph` is the tool that can enumerate, and the schema card
+            // exposes `isPublic` for exactly this. The search listing stays —
+            // for a package whose exports do share the package's prefix it is
+            // a complete answer on its own, and it is charged for either way.
+            TaskKind::Overview => {
+                if self.policy.allows("graph") {
+                    if let Some((query, query_args)) = graph_query_for(scenario) {
+                        // Every arg value is a string: `GraphQueryArgs.args`
+                        // is a `BTreeMap<String, String>` and the engine
+                        // coerces to the property's declared type — a JSON
+                        // `true` is a type error, not a boolean. And
+                        // enumerating needs a page big enough to enumerate
+                        // into; 500 is the tool's documented cap.
+                        let args = json!({ "query": query, "args": query_args, "limit": 500 });
+                        self.call(&mut builder, "graph", args, &mut error, Evidence::Answer)
+                            .await;
+                    }
+                } else if self.policy.allows("read") {
+                    let args = json!({ "keys": [identity], "format": "source" });
+                    self.call(&mut builder, "read", args, &mut error, Evidence::Answer)
+                        .await;
+                }
+            }
             TaskKind::Implementors => {
                 if self.policy.allows("graph") {
                     if self.policy.allows("schema") {
                         self.call(&mut builder, "schema", json!({}), &mut error, Evidence::Navigation)
                     .await;
                     }
-                    if let Some(query) = graph_query_for(scenario) {
-                        let args = json!({
-                            "query": query,
-                            "variables": {
-                                "package": scenario.target.package,
-                                "name": scenario.probe.name.clone().unwrap_or_default(),
-                            }
-                        });
+                    if let Some((query, query_args)) = graph_query_for(scenario) {
+                        let args = json!({ "query": query, "args": query_args, "limit": 500 });
                         self.call(&mut builder, "graph", args, &mut error, Evidence::Answer)
                         .await;
                     }
@@ -959,40 +996,85 @@ fn parse_lineages(raw: &Value, markdown: &str) -> Vec<String> {
 /// name is an error rather than an empty result, so a scenario whose query
 /// does not compile shows up as a tool error in the transcript — visible,
 /// not silently scored zero.
-fn graph_query_for(scenario: &Scenario) -> Option<String> {
+/// The bare name a structural query filters on.
+fn probe_name(scenario: &Scenario) -> String {
+    scenario
+        .probe
+        .name
+        .clone()
+        .or_else(|| {
+            scenario
+                .probe
+                .symbol
+                .as_ref()
+                .and_then(|s| s.rsplit("::").next().map(str::to_owned))
+        })
+        .unwrap_or_default()
+}
+
+/// The Trustfall query for a task, together with the arguments it binds.
+///
+/// The two travel together because the engine rejects a call whose `args`
+/// contain a name the query does not use — *"One or more of the provided
+/// arguments are not used in this query"* — so a query and its bindings
+/// cannot be maintained apart without drifting into that error.
+fn graph_query_for(scenario: &Scenario) -> Option<(String, Value)> {
     match scenario.task {
-        TaskKind::Implementors => Some(
+        // `Trait.implementors` exists only on the concrete `Trait` type, so
+        // the inline fragment is load-bearing, not decoration.
+        TaskKind::Implementors => Some((
             r#"{
-  Package(name: $package) {
-    symbols {
-      ... on Trait {
-        name @filter(op: "=", value: ["$name"])
-        implementors {
-          name @output
-          kind @output
-          signature @output
-        }
-      }
-    }
-  }
-}"#
-            .to_owned(),
-        ),
-        TaskKind::Callers => Some(
-            r#"{
-  Package(name: $package) {
-    symbols {
+  Symbols {
+    ... on Trait {
       name @filter(op: "=", value: ["$name"])
-      referencedBy {
-        name @output
-        kind @output
-        signature @output
-      }
+      implementors { key @output name @output path @output }
     }
   }
 }"#
             .to_owned(),
-        ),
+            json!({ "name": probe_name(scenario) }),
+        )),
+        // Who references this declaration.
+        //
+        // `usages` is the reverse edge and lands on `Symbol` directly: the
+        // declarations that use this one, which for a function are its
+        // callers. Two wrong turns are recorded here so they are not retaken:
+        // `occurrencesOf` is the *forward* edge and returns only the
+        // declaration itself ("references I contain"), and `usages` has no
+        // `owner` hop — that belongs to `Occurrence`, which this edge does
+        // not yield.
+        TaskKind::Callers => Some((
+            r#"{
+  Symbols {
+    name @filter(op: "=", value: ["$name"])
+    usages { key @output name @output kind @output path @output }
+  }
+}"#
+            .to_owned(),
+            json!({ "name": probe_name(scenario) }),
+        )),
+        // Every public declaration in the package.
+        //
+        // `search` cannot answer this: it ranks a name section built from
+        // exact-and-prefix matches, so one query only ever reaches names
+        // sharing a prefix with it — `memchr` finds `memchr2` and
+        // `memchr_iter` and can never find `memrchr`. Entering at `Packages`
+        // and walking `members` enumerates instead of matching.
+        TaskKind::Overview => Some((
+            r#"{
+  Packages {
+    name @filter(op: "=", value: ["$package"])
+    members {
+      isPublic @filter(op: "=", value: ["$public"])
+      name @output
+      kind @output
+      path @output
+    }
+  }
+}"#
+            .to_owned(),
+            json!({ "package": scenario.target.package.clone(), "public": "true" }),
+        )),
         _ => None,
     }
 }
