@@ -292,6 +292,18 @@ A model that is *present but broken* reports `ModelFailed` rather than
 `NoModelConfigured` — a different failure pointing at a missing file, a bad
 hash, or an out-of-memory runtime.
 
+Two operational facts, both learned the hard way on 2026-08-30:
+
+* **It costs memory.** With the embedder loaded over five packages the
+  endpoint held ~4.8 GB resident. Running a `cargo build --release` beside it
+  got the endpoint OOM-killed mid-run.
+* **Embeddings are built after a package loads, not before.** A question asked
+  too early gets `~sem:building(0/1)` and can score zero on a package that
+  would otherwise answer. `py/requests/callers-api-request` did exactly that —
+  54 tokens, no matches, purely because the run started seconds after the
+  endpoint came up. Give it time to settle, and check a response for
+  `~sem:building` before trusting a low score.
+
 ### 3.2 Go
 
 The Go producer shells out to a compiled oracle binary that is not built by
@@ -477,6 +489,8 @@ There is deliberately no single headline score — see
 | `` `#![feature]` may not be used on the stable release channel `` | built the endpoint from the repo root | `cd endpoint` first — the toolchain is resolved from the working directory |
 | `failed to authenticate when downloading repository` | building `nudox-engine` from inside Backend's workspace | build via `endpoint/`, which stands outside that workspace |
 | `could not compile pyrefly … (signal: 9, SIGKILL)` | the OOM killer — `pyrefly` and `ra_ap_*` are large, and `-C opt-level=3` codegen holds a lot per job | `cargo build --release -j 2`, and stop any running endpoint first (it holds an indexed corpus in memory) |
+| the endpoint vanishes mid-run; `Connection refused` on the next call | the OOM killer again — with the embedder loaded the endpoint held **4.8 GB RSS** over five packages, and a concurrent release build pushed the machine over | do not build and serve at the same time; index fewer packages, or run the endpoint on a machine with headroom |
+| `~sem:building(0/1)` in a response, and a scenario scores 0 | the semantic index was still being built when the question arrived — embeddings are computed after a package loads, not before | wait for it to settle after start-up before running, or the run measures a warm-up race rather than the tool |
 | `no such file or directory: ../../Backend/...` | Backend is not a sibling, or you are in a git worktree | put the checkouts side by side; build from the main checkout |
 | `MISSING ${NODE_MODULES}/commander` | the variable is unset and survived into the path verbatim | `export NODE_MODULES=…` |
 | `MISSING rust-analyzer is not runnable` | the rustup shim exists but the component does not | `rustup component add rust-analyzer`, or set `RUST_ANALYZER_BIN` |
