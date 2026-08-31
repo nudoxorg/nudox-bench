@@ -866,6 +866,9 @@ fn pick_hit<'a>(hits: &'a [Hit], scenario: &Scenario) -> Option<&'a Hit> {
         return hits.first();
     }
     let name = wanted.last().cloned().unwrap_or_default();
+    // Case-sensitively, too: `Memchr3` the struct and `memchr3` the function
+    // are different declarations, and `segments` lowercases.
+    let exact_name = raw_last_segment(symbol);
 
     // Score, then take the FIRST best rather than the last.
     //
@@ -884,7 +887,7 @@ fn pick_hit<'a>(hits: &'a [Hit], scenario: &Scenario) -> Option<&'a Hit> {
     // symbol), then the longest shared path suffix, and ties fall back to the
     // server's own ranking, which is the one piece of judgement the harness
     // has no business overriding.
-    let mut best: Option<(&Hit, (u8, usize))> = None;
+    let mut best: Option<(&Hit, (u8, u8, usize))> = None;
     for hit in hits {
         let text = hit
             .address
@@ -892,13 +895,38 @@ fn pick_hit<'a>(hits: &'a [Hit], scenario: &Scenario) -> Option<&'a Hit> {
             .or(hit.key.as_deref())
             .unwrap_or_default();
         let parts = segments(text);
-        let exact = u8::from(parts.last().is_some_and(|last| *last == name));
-        let score = (exact, common_suffix_len(&parts, &wanted));
+        // Three tiers, strongest first: the same name in the same case, the
+        // same name ignoring case, then the longest shared path.
+        //
+        // Case is not pedantry here. With the embedder on, a search for
+        // `memchr3` ranked the struct `Memchr3` above the function, and a
+        // case-insensitive match happily followed it — so `read` returned
+        // `pub struct Memchr3<'h>` instead of the signature the scenario
+        // asked for. The scenario still passed, but only on text the search
+        // listing happened to carry, which is exactly the kind of pass the
+        // `matched` column exists to expose.
+        let cased = u8::from(raw_last_segment(text) == exact_name);
+        let folded = u8::from(parts.last().is_some_and(|last| *last == name));
+        let score = (cased, folded, common_suffix_len(&parts, &wanted));
         if best.is_none_or(|(_, current)| score > current) {
             best = Some((hit, score));
         }
     }
     best.map(|(hit, _)| hit).or_else(|| hits.first())
+}
+
+/// The final path segment with its case intact, and its address decoration
+/// (`[kind]`, `@version`, quoting) removed.
+fn raw_last_segment(text: &str) -> String {
+    let text = text.split('[').next().unwrap_or(text);
+    text.rsplit(['.', '/', ':'])
+        .find(|segment| !segment.is_empty())
+        .unwrap_or(text)
+        .trim_matches(|c: char| c == '\'' || c == '"' || c == '`')
+        .split('@')
+        .next()
+        .unwrap_or(text)
+        .to_owned()
 }
 
 /// Split an address or a qualified path into lowercase segments, dropping the
@@ -1266,6 +1294,20 @@ package: `npm:commander`
             pick_hit(&hits, &scenario).unwrap().address.as_deref(),
             hits[0].address.as_deref(),
             "nothing matches, so the server's first hit stands"
+        );
+
+        // Case is part of identity: `Memchr3` the struct is not `memchr3`
+        // the function, and with the embedder on the struct ranked first.
+        let cased = vec![
+            hit("cargo:memchr::Memchr3[record]"),
+            hit("cargo:memchr::memchr3[function]"),
+        ];
+        let mut sig = scenario.clone();
+        sig.probe.symbol = Some("memchr::memchr3".into());
+        assert_eq!(
+            pick_hit(&cased, &sig).unwrap().address.as_deref(),
+            Some("cargo:memchr::memchr3[function]"),
+            "the function, not the same-name struct"
         );
 
         // And an exact name match beats everything, wherever it ranks.
