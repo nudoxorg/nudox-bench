@@ -59,12 +59,36 @@ tokens, two pages) — `into_entry`, `into_map` and `replace_key` all found.
 `insert_entry_with_key` is presumably on page three, which
 `max_tool_calls = 2` does not buy.
 
-## Known defects in this run
+## This run predates two harness fixes
 
-* **`py/requests/callers-api-request` is a warm-up race, not a result.** The
-  run started seconds after the endpoint came up, and the response carries
-  `~sem:building(0/1)` — the semantic index was still being built. Nudox scored
-  0% on 54 tokens. Re-measured in isolation, see `requests-remeasured.md`.
+Two adapter bugs were found *after* this run, by reading the payload of the
+scenario it scored zero on. Both are committed and unit-tested, and both were
+re-measured in isolation against a single-package endpoint — but **this run's
+table does not include them**, because the machine cannot hold the full corpus
+and a rebuild at once (see below).
+
+| | this run | re-measured with the fixes |
+|---|---|---|
+| `py/requests/callers-api-request`, nudox-full | 0% on 54 tokens | **29% on 2,398 tokens** |
+
+1. **The query was a path, and `search` matches names.** The adapter sent
+   `requests.api.request` verbatim; no declaration is *named* that, so the
+   response was `## Search · 0 … (no matches)`. The Rust scenarios escaped this
+   only because their queries were already bare identifiers.
+2. **A bare name is ambiguous.** `request` returns 50 hits, the first being
+   `'requests.sessions'.Session.request` — the method, not the module-level
+   function the scenario names. The adapter followed it and `refs` returned
+   `(none)`. It now picks the hit sharing the most trailing path segments with
+   the scenario's `probe.symbol`.
+
+**What is left after both fixes is a real finding, not a harness bug.**
+`refs(in)` on the correct key — `pypi:requests::'requests.api'.request[function]`
+— returns `(none)`. Nudox records no inbound references for that function, so
+the 29% is what the search listing alone carries. Whether that is a Python
+producer gap or a scoping default (`~scope:default` excludes `Field`, `Variant`
+and `Param`) is the next thing to establish.
+
+## Known defects in this run
 * **The distractor moved to Nudox.** `ParseBytes` now leaks into *Nudox's*
   answer on `go/uuid/callers-parse` (50% recall, one distractor) while ripgrep
   passes that scenario. Unlike ripgrep's, this one is a genuine index
@@ -77,3 +101,21 @@ tokens, two pages) — `into_entry`, `into_map` and `replace_key` all found.
   `memchr_iter` but never `memrchr`. That is the query strategy, not the index.
 * **Ten scenarios is still not a sample.** Nothing here is statistically
   significant.
+
+## Why there is no re-run with the fixes
+
+The machine ran out of memory. With the embedder loaded over five packages the
+endpoint holds **~5.4 GB resident**, and the kernel killed it twice — once
+mid-session while a `cargo build --release` ran beside it, and once before a
+run could start, with 5 GB available against that 5.4 GB working set:
+
+```
+Out of memory: Killed process 1385885 (nudox-endpoint)
+  total-vm:11401620kB, anon-rss:5395604kB
+```
+
+The two fixes above are therefore verified in isolation, on a single-package
+endpoint, rather than in a full matrix. Reproducing the whole table with them
+needs a machine with more headroom, or a corpus trimmed to the scenarios under
+test. That is the first thing to do next, and it is a hardware constraint
+rather than an open question.

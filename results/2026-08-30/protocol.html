@@ -510,6 +510,35 @@ footer {
   </div>
 </header>
 
+<section>
+  <div class="callout" style="border-left-color: var(--accent)">
+    <h3>Superseded in part — a later run has the numbers</h3>
+    <p>The method below still stands, and is the reason to read this page. The
+    <em>results</em> are from <code>run-2026-08-30-165221</code>, which ran with
+    semantic search switched off, over three of five packages, and with a
+    ripgrep baseline that searched test files. A later run,
+    <code>run-2026-08-30-225507</code>, has everything on.</p>
+    <div class="tablewrap" style="margin-top:1rem">
+      <table class="data">
+        <thead><tr><th></th><th>this page</th><th>full-corpus run</th></tr></thead>
+        <tbody>
+          <tr><td class="name">semantic search</td><td>off — <code>NoModelConfigured</code></td><td><strong>on</strong></td></tr>
+          <tr><td class="name">packages loaded</td><td>3 of 5</td><td><strong>5 of 5</strong></td></tr>
+          <tr><td class="name">nudox-full attempted</td><td>6 of 10, 3 declined</td><td><strong>8 of 10, 0 declined</strong></td></tr>
+          <tr><td class="name">nudox-full passed</td><td>3/6</td><td>4/8</td></tr>
+          <tr><td class="name">ripgrep passed</td><td>5/7</td><td><strong>6/7</strong>, tests excluded</td></tr>
+          <tr><td class="name">ripgrep strict / matched</td><td>0.95 / not measured</td><td>0.95 / <strong>0.57</strong></td></tr>
+          <tr><td class="name">hashbrown diff, nudox</td><td>0% — one page taken</td><td><strong>75%</strong> — cursor followed</td></tr>
+        </tbody>
+        <caption>Full write-up in
+        <code>results/2026-08-30-full-corpus/README.md</code>. Two claims on
+        this page were corrected by auditing the stored payloads; both are
+        marked where they appear.</caption>
+      </table>
+    </div>
+  </div>
+</section>
+
 <!-- ============ 1. THE QUESTION ============ -->
 <section>
   <div class="sec-head"><span class="idx">01</span><h2>The question this instrument asks</h2></div>
@@ -1218,13 +1247,34 @@ footer {
     ripgrep numbers price one particular invocation, not the tool's ceiling:
     the flags and context window are the adapter's choice, and on at least one
     scenario they decided the verdict.</p>
-    <p><strong>One measurement limit worth naming.</strong> The strict/loose
-    split only bites where a fact has a qualified spelling. In the Go and
-    Python scenarios the expected facts are bare identifiers
+    <p><strong>One measurement limit worth naming — since closed.</strong> The
+    strict/loose split only bites where a fact has a qualified spelling. In the
+    Go and Python scenarios the expected facts are bare identifiers
     (<code>MustParse</code>, <code>Scan</code>), so strict and loose recall
     coincide by construction — and a grep context window can then manufacture
     recall by printing the enclosing declaration near an unrelated match. The
     resolution-gap column cannot see that, and did not.</p>
+    <p>The harness now measures it directly, as a <strong><code>matched</code>
+    column</strong>: strict recall counting only facts on a line the adapter
+    actually <em>matched</em>, rather than ones it printed in the window around
+    a match. It is the same distinction as strict-versus-loose, drawn for
+    provenance instead of spelling, and it is the only one available where a
+    fact is a bare identifier. The first reading, on the full-corpus run:</p>
+    <div class="tablewrap">
+      <table class="data">
+        <thead><tr><th>adapter</th><th>strict</th><th>matched</th></tr></thead>
+        <tbody>
+          <tr class="hl"><td class="name"><span class="dot d-rg"></span>ripgrep</td><td>0.95</td><td><strong>0.57</strong></td></tr>
+          <tr><td class="name"><span class="dot d-nudox"></span>nudox-full</td><td>0.73</td><td>0.73</td></tr>
+          <tr><td class="name"><span class="dot d-ra"></span>rust-analyzer</td><td>0.35</td><td>0.35</td></tr>
+        </tbody>
+        <caption>Two fifths of ripgrep's recall is text it printed rather than
+        text it found. Nudox's and rust-analyzer's figures are identical
+        because everything they return, they were asked for — which is the
+        property the column exists to make visible, and which no pass rate
+        shows.</caption>
+      </table>
+    </div>
   </div>
 </section>
 
