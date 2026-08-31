@@ -244,7 +244,37 @@ async fn main() -> Result<()> {
     }
 
     let expected: Vec<String> = specs.iter().map(|s| s.name.clone()).collect();
-    let engine = Engine::start_with_producer(EngineConfig::default(), specs);
+    // Install the semantic embedder, exactly as `lindsey`'s `main.rs` does.
+    //
+    // Without this line `EngineConfig::default()` leaves `embedder: None`, and
+    // every `search` response carries `~sem:unavailable(NoModelConfigured)` —
+    // which is what the 2026-08-30 run measured. The variable is read here and
+    // nowhere else, so setting `NUDOX_EMBED_MODEL_DIR` without this line would
+    // have changed nothing: the engine takes an embedder from its host, it does
+    // not go looking for one.
+    //
+    // `load_from_env` returns `None` in exactly one case — the variable is
+    // unset. It needs no rebuild to switch on, and a *broken* model is a
+    // different, louder failure (`ModelFailed`) rather than this quiet one.
+    let embedder = nudox_engine::embed::load_from_env();
+    if !cli.export {
+        eprintln!(
+            "semantic search: {}",
+            if embedder.is_some() {
+                "on (model from NUDOX_EMBED_MODEL_DIR)"
+            } else {
+                "OFF — structural only. Set NUDOX_EMBED_MODEL_DIR to enable."
+            }
+        );
+    }
+
+    let engine = Engine::start_with_producer(
+        EngineConfig {
+            embedder,
+            ..EngineConfig::default()
+        },
+        specs,
+    );
     wait_for_packages(
         &engine,
         &expected,
