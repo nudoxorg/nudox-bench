@@ -141,10 +141,53 @@ GROUP BY o.run_id, o.adapter;
 """
 
 
+# Columns added to `outcomes` after the first databases were created.
+#
+# `CREATE TABLE IF NOT EXISTS` does exactly nothing to a table that already
+# exists, so a new column in SCHEMA reaches a fresh database and silently
+# misses every existing one — which then fails on the next ingest with
+# `table outcomes has no column named …`. Measured, on the database this repo
+# built the day before `answer_distr` was added.
+#
+# The database is disposable, so this is a convenience rather than a
+# migration system: add the column, leave old rows NULL, and let the views
+# fall back.
+ADDED_COLUMNS = {
+    "outcomes": [
+        ("matched", "REAL"),
+        ("answer_distr", "INTEGER"),
+    ],
+}
+
+
+def _migrate(conn: sqlite3.Connection) -> list[str]:
+    """Add any column this file knows about that the database lacks."""
+    added = []
+    for table, columns in ADDED_COLUMNS.items():
+        present = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if not present:
+            continue  # table not created yet; SCHEMA will make it complete
+        for name, decl in columns:
+            if name not in present:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+                added.append(f"{table}.{name}")
+    if added:
+        conn.commit()
+    return added
+
+
 def connect(db_path: Path = DEFAULT_DB) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    added = _migrate(conn)
+    if added:
+        # Say so: a column that appears without explanation is worse than one
+        # that announces itself once.
+        print("  migrated: added %s" % ", ".join(added))
+        # The views were created against the old shape, so rebuild them.
+        conn.execute("DROP VIEW IF EXISTS adapter_summary")
+        conn.executescript(SCHEMA)
     return conn
 
 
