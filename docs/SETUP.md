@@ -294,26 +294,42 @@ hash, or an out-of-memory runtime.
 
 ### What the embedder costs, measured
 
-**~4.9 GB, flat, regardless of corpus size.** With a single small package
-(memchr) loaded, resident memory goes:
+**Budget 8 GB free for a five-package corpus.** Two costs, and the second is
+the one that surprises:
 
 ```
-t=15s  RSS=0.58 GB          ← producers running
-t=25s  RSS=4.50 GB          ← the model loads
-t=30s  RSS=4.87 GB          ← and then it does not move
+t=15s  RSS=0.58 GB    producers running, no model yet
+t=25s  RSS=4.50 GB    the model loads — a fixed ~4 GB step
+t=30s  RSS=4.87 GB
+…
+        RSS=7.43 GB   building the vector index over five packages
 ```
 
-That is the ONNX arena, allocated once. The corpus adds only ~0.2–0.5 GB on
-top, which is why **trimming packages does not help**: five packages cost
-5.4 GB and two cost 5.2 GB. Budget ~5.5 GB free for the endpoint, whatever you
-are indexing.
+The first step is fixed: loading the ONNX model costs ~4 GB whatever you are
+indexing. The second is **not** — building the index adds roughly 2.5 GB more
+over a five-package corpus, and it grows with the number of symbols embedded,
+not the number of packages.
+
+An earlier version of this file claimed the whole thing was flat at ~4.9 GB.
+It is not; that measurement was taken from a probe the OOM killer stopped
+before the index finished building, which is a good illustration of why a
+number should come from a run that completed.
+
+Memory does plateau — it held at 7.43 GB for several minutes while four cores
+stayed busy — so it is bounded by corpus size rather than unbounded. But
+plateauing at 7.43 GB on a 16 GB machine leaves very little room.
 
 Three things follow, all learned by being killed:
 
 * **Check `MemAvailable`, not total RAM.** On a 16 GB machine with an editor
   open, two `rust-analyzer` processes held 2.3 GB and left 5.08 GB available —
   enough to *start* the endpoint and not enough to keep it. Closing them took
-  available to 8.77 GB, which is comfortable.
+  available to 8.77 GB, which is what made a full-corpus embedded run possible
+  at all:
+  ```bash
+  awk '/MemAvailable/{printf "%.2f GB\n", $2/1048576}' /proc/meminfo
+  pkill -f rust-analyzer   # your editor respawns them
+  ```
 * **Have some swap.** A machine with `SwapTotal: 0` gives a transient spike
   nowhere to go, so it becomes an instant kill rather than a slowdown.
 * **Do not build and serve at once.** A `cargo build --release` beside a
