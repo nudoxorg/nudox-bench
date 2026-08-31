@@ -275,20 +275,34 @@ impl NudoxAdapter {
     }
 
     /// The query for every task that is looking for one named thing.
+    ///
+    /// # Why the last segment, not the whole path
+    ///
+    /// `search` matches by **name and kind** — its own description says so.
+    /// A dotted or `::`-separated path is therefore not a better query than
+    /// the bare identifier, it is a query that matches nothing: no
+    /// declaration is *named* `requests.api.request`.
+    ///
+    /// Measured on 2026-08-30. The Python scenario carries
+    /// `query = "requests.api.request"`, and sending it verbatim returned
+    /// `## Search · 0 … (no matches)` in 54 tokens — scored as a 0% failure
+    /// against a package Nudox had loaded and indexed perfectly well. The
+    /// Rust scenarios only escaped this because their queries were already
+    /// bare (`search_slice_with_raw`).
+    ///
+    /// This is the same mistake `overview` already documents above, and it is
+    /// the harness's, not the tool's: an agent looking for a symbol searches
+    /// its name. The full path stays in the scenario for the judge and for
+    /// adapters that do read paths.
     fn free_text_query(&self, scenario: &Scenario) -> String {
-        scenario
+        let full = scenario
             .probe
             .query
             .clone()
             .or_else(|| scenario.probe.name.clone())
-            .or_else(|| {
-                scenario
-                    .probe
-                    .symbol
-                    .as_ref()
-                    .and_then(|s| s.rsplit("::").next().map(str::to_owned))
-            })
-            .unwrap_or_else(|| scenario.question.clone())
+            .or_else(|| scenario.probe.symbol.clone())
+            .unwrap_or_else(|| scenario.question.clone());
+        last_segment(&full)
     }
 
     /// Pull identities out of a search response, preferring the structured
@@ -544,7 +558,7 @@ impl Adapter for NudoxAdapter {
             return builder.finish(error);
         }
 
-        let Some(hit) = hits.first() else {
+        let Some(hit) = pick_hit(&hits, scenario) else {
             return builder.finish(error);
         };
         let Some(identity) = hit.identity(self.policy.address_mode) else {
@@ -719,6 +733,106 @@ impl NudoxAdapter {
             }
         }
     }
+}
+
+/// Choose the search hit the scenario is actually asking about.
+///
+/// # Why not simply the top hit
+///
+/// Searching a bare name is what makes `search` match at all (see
+/// [`NudoxAdapter::free_text_query`]), but a bare name is ambiguous: querying
+/// `request` in `pypi:requests` returns 50 hits, and the first is
+/// `'requests.sessions'.Session.request` — the method on `Session`, not
+/// `requests.api.request`, the module-level function the scenario names.
+/// Following the wrong identity then made `refs` return `(none)`, and the
+/// scenario scored 29% on evidence that came only from the search listing.
+///
+/// A scenario that names a qualified `probe.symbol` has already said which
+/// one it means, so the hit whose address ends with that path wins. Ranking
+/// by *most trailing segments in common* rather than exact equality is what
+/// makes this work across ecosystems, since an address carries an ecosystem
+/// prefix, a version and a `[kind]` suffix that the scenario's spelling does
+/// not.
+///
+/// With no `probe.symbol`, the server's own ranking is respected.
+fn pick_hit<'a>(hits: &'a [Hit], scenario: &Scenario) -> Option<&'a Hit> {
+    let Some(symbol) = scenario.probe.symbol.as_deref() else {
+        return hits.first();
+    };
+    let wanted: Vec<String> = segments(symbol);
+    if wanted.is_empty() {
+        return hits.first();
+    }
+    hits.iter()
+        .max_by_key(|hit| {
+            let text = hit
+                .address
+                .as_deref()
+                .or(hit.key.as_deref())
+                .unwrap_or_default();
+            common_suffix_len(&segments(text), &wanted)
+        })
+        .or_else(|| hits.first())
+}
+
+/// Split an address or a qualified path into lowercase segments, dropping the
+/// decoration an address carries and a scenario's spelling does not: the
+/// `[kind]` suffix, a `@version`, and any quoting the renderer adds.
+fn segments(text: &str) -> Vec<String> {
+    // The `@version` run has to go *before* splitting, not after: a version
+    // contains dots, so `memchr@2.8.3` would otherwise contribute the
+    // segments `8` and `3` and wreck the suffix comparison.
+    let text = text.split('[').next().unwrap_or(text);
+    let mut cleaned = String::with_capacity(text.len());
+    let mut in_version = false;
+    for c in text.chars() {
+        match c {
+            '@' => in_version = true,
+            ':' | '/' if in_version => {
+                in_version = false;
+                cleaned.push(c);
+            }
+            _ if in_version => {}
+            _ => cleaned.push(c),
+        }
+    }
+
+    cleaned
+        .split(|c| c == '.' || c == '/' || c == ':')
+        .map(|segment| {
+            segment
+                .trim_matches(|c: char| c == '\'' || c == '"' || c == '`')
+                .to_ascii_lowercase()
+        })
+        .filter(|segment| !segment.is_empty())
+        .collect()
+}
+
+/// How many trailing segments two paths share.
+fn common_suffix_len(a: &[String], b: &[String]) -> usize {
+    a.iter()
+        .rev()
+        .zip(b.iter().rev())
+        .take_while(|(x, y)| x == y)
+        .count()
+}
+
+/// The bare identifier at the end of a qualified path.
+///
+/// `::`, `.` and `/` are all segment separators — the same three Nudox's own
+/// address grammar treats as interchangeable, and the three that Rust, Python
+/// and Go respectively spell a path with. A query with no separator is
+/// returned unchanged, and free text (which contains spaces) is left alone
+/// rather than being truncated to its last word.
+fn last_segment(query: &str) -> String {
+    if query.contains(char::is_whitespace) {
+        return query.to_owned();
+    }
+    query
+        .rsplit(|c| c == '.' || c == '/' || c == ':')
+        .find(|segment| !segment.is_empty())
+        .unwrap_or(query)
+        .to_owned()
 }
 
 /// The pagination cursor a response offers, if it offers one.
@@ -898,6 +1012,69 @@ package: `npm:commander`
         assert_eq!(next_cursor("summary: 50 changed\n| a | b |"), None);
         assert_eq!(next_cursor("next: ``"), None);
         assert_eq!(next_cursor(""), None);
+    }
+
+    /// `search` matches names, so a path must be reduced to the name at its
+    /// end. The Python case is the one that was measured failing.
+    #[test]
+    fn a_path_query_is_reduced_to_its_name() {
+        assert_eq!(last_segment("requests.api.request"), "request");
+        assert_eq!(last_segment("memchr::arch::generic::search_slice_with_raw"),
+                   "search_slice_with_raw");
+        assert_eq!(last_segment("github.com/google/uuid/Parse"), "Parse");
+        // Already bare: unchanged.
+        assert_eq!(last_segment("search_slice_with_raw"), "search_slice_with_raw");
+        // Free text is a question, not a path; truncating it would be worse.
+        assert_eq!(last_segment("memchr public exports"), "memchr public exports");
+    }
+
+    /// The measured case: `request` in `pypi:requests` returns the `Session`
+    /// method first, but the scenario names the module-level function.
+    #[test]
+    fn the_hit_matching_the_probe_symbol_wins_over_the_top_hit() {
+        let hit = |address: &str| Hit {
+            address: Some(address.to_owned()),
+            key: None,
+        };
+        let hits = vec![
+            hit("pypi:requests::'requests.sessions'.Session.request[function]"),
+            hit("pypi:requests::'requests.api'.request[function]"),
+        ];
+
+        let mut scenario = crate::testing::scenario_with_truth(crate::scenario::Truth {
+            mode: crate::scenario::TruthMode::SymbolSet,
+            all_of: vec!["get".into()],
+            any_of: Vec::new(),
+            none_of: Vec::new(),
+            oracle: None,
+            sources: Vec::new(),
+        });
+        scenario.probe.symbol = Some("requests.api.request".into());
+        let picked = pick_hit(&hits, &scenario).unwrap();
+        assert_eq!(
+            picked.address.as_deref(),
+            Some("pypi:requests::'requests.api'.request[function]"),
+            "the module-level function is the one the scenario names"
+        );
+
+        // With no qualified symbol, the server's own ranking stands.
+        scenario.probe.symbol = None;
+        assert_eq!(
+            pick_hit(&hits, &scenario).unwrap().address.as_deref(),
+            hits[0].address.as_deref()
+        );
+    }
+
+    #[test]
+    fn segments_drop_address_decoration() {
+        assert_eq!(
+            segments("pypi:requests::'requests.api'.request[function]"),
+            vec!["pypi", "requests", "requests", "api", "request"]
+        );
+        assert_eq!(
+            segments("cargo:memchr@2.8.3::memchr::memchr3[function]"),
+            vec!["cargo", "memchr", "memchr", "memchr3"]
+        );
     }
 
     #[test]
