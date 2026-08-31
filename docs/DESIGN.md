@@ -62,9 +62,28 @@ near-misses, same-named symbols elsewhere, the classic text-search false
 positives. Any distractor sinks the scenario.
 
 This is not hypothetical. On `go/uuid/callers-parse`, ripgrep achieves 100%
-strict recall and fails, because `ParseBytes` — verified by reading
-`uuid.go:120` to have its own parsing path and never to call `Parse` — matches
-`\bParse\s*\(` and lands in the output.
+strict recall and fails, because `ParseBytes` lands in the output.
+
+**Corrected 2026-08-30, by auditing the stored payload.** This paragraph used
+to say `ParseBytes` *matches* `\bParse\s*\(`. It does not, and cannot —
+`ParseBytes(` has `Bytes` where that pattern requires `\s*\(`. All five of its
+mentions in the returned context are **`-B 12` context lines** from
+`uuid_test.go`. The recall came the same way: `MustParse` and `Scan` were both
+credited from context lines carrying the enclosing `func` declaration, not from
+a matched call site, and 267 of the 343 returned lines are from `_test.go`
+files.
+
+Two things follow, and both are worth more than the original claim:
+
+* The scenario is real — a near-miss symbol did leak into an answer that should
+  have been narrow, and the distractor rule caught it. But what it prices is the
+  **ripgrep adapter's invocation** (twelve lines of leading context, no
+  test-file exclusion), not a limit of text search. `--glob '!*_test.go'` would
+  plausibly pass it.
+* Where a scenario's facts are bare identifiers — every Go and Python scenario —
+  strict and loose recall coincide by construction, so the resolution gap cannot
+  detect recall manufactured by a context window. That is a gap in the
+  measurement, not in the tool under test.
 
 ## <a id="no-headline-number"></a>No headline number
 

@@ -972,13 +972,28 @@ footer {
       strict recall, the <code>any_of</code> gate satisfied, and zero
       distractors. Deliberately strict — a partial answer to "who calls this" is
       a wrong answer to "who calls this".</p>
-      <p><strong>This is not hypothetical.</strong> On
-      <code>go/uuid/callers-parse</code>, ripgrep found <strong>100%</strong> of
-      the expected callers and still failed, because <code>ParseBytes</code>
-      landed in the output: an exported function whose name contains
-      <code>Parse</code>, which has its own parsing path and never calls it —
-      verified by reading <code>uuid.go:120</code>. A benchmark scoring recall
-      alone would have called that a perfect answer.</p>
+      <p><strong>This is not hypothetical — but the mechanism is not the one
+      this repo's docs claim.</strong> On <code>go/uuid/callers-parse</code>,
+      ripgrep reached <strong>100%</strong> strict recall and still failed,
+      because <code>ParseBytes</code> appeared in the output. Auditing the
+      stored payload for this page showed how it got there, and it was not the
+      regex: <code>ParseBytes(</code> cannot match
+      <code>\bParse\s*\(</code>. All five of its mentions are
+      <strong>context lines</strong> from <code>uuid_test.go</code>, pulled in
+      by the adapter's <code>-B 12</code> window.</p>
+      <p>So was the recall. <code>MustParse</code> and <code>Scan</code> were
+      both credited from context lines carrying the enclosing <code>func</code>
+      declaration — not from a matched call site. 78% of the 343 returned lines
+      come from <code>_test.go</code> files, which is also where the
+      10,719-token cost went.</p>
+      <p>What this scenario measures, then, is the baseline's
+      <em>invocation</em>: twelve lines of leading context and no test-file
+      exclusion produced both the recall and the failure, and
+      <code>rg --glob '!*_test.go'</code> would plausibly have passed it. The
+      distractor rule did its job — a near-miss symbol did leak into an answer
+      that should have been narrow — but this is a finding about the harness's
+      ripgrep adapter, not a demonstration that text search cannot tell callers
+      from callees.</p>
     </div>
   </div>
 
@@ -1156,9 +1171,11 @@ footer {
     <div class="claim">
       <h3>Recall alone cannot buy a pass</h3>
       <p>Precision is scored explicitly through distractor sets, so a tool
-      cannot win by returning more text. The clearest single result in this run
-      is a 100%-recall failure, which is the mechanism working exactly as
-      designed.</p>
+      cannot win by returning more text. The one 100%-recall failure in this
+      run shows the mechanism firing — though an audit of the payload traced
+      that scenario's recall <em>and</em> its distractor to the same
+      <code>-B 12</code> context window, so it prices the baseline's
+      invocation rather than text search as such.</p>
       <p class="where"><b>enforced by</b> <code>truth.none_of</code> per scenario; any hit sets <code>passed = false</code></p>
     </div>
 
@@ -1198,8 +1215,16 @@ footer {
     here follows a fixed, scripted tool path, so what is measured is the surface,
     not an agent's use of it. It cannot support a statistical claim at n=10. It
     cannot speak to Nudox's semantic search, which was switched off. And its
-    ripgrep numbers are a floor for a well-flagged invocation, not the ceiling a
-    persistent expert would reach.</p>
+    ripgrep numbers price one particular invocation, not the tool's ceiling:
+    the flags and context window are the adapter's choice, and on at least one
+    scenario they decided the verdict.</p>
+    <p><strong>One measurement limit worth naming.</strong> The strict/loose
+    split only bites where a fact has a qualified spelling. In the Go and
+    Python scenarios the expected facts are bare identifiers
+    (<code>MustParse</code>, <code>Scan</code>), so strict and loose recall
+    coincide by construction — and a grep context window can then manufacture
+    recall by printing the enclosing declaration near an unrelated match. The
+    resolution-gap column cannot see that, and did not.</p>
   </div>
 </section>
 
@@ -1238,9 +1263,14 @@ footer {
     tokens, but writing a correct query against it is not free.</li>
 
     <li><strong>ripgrep is a much stronger baseline than it is usually given
-    credit for.</strong> Given fair flags it passes 5 of 7. Anything replacing it
-    has to win on cost, precision, or reach — not on "can it find things at
-    all".</li>
+    credit for — and its numbers move with its flags.</strong> It passes 5 of 7
+    as invoked here. But the adapter builds one fixed regex and context window
+    per task kind, and the payload audit showed those choices deciding a
+    scenario outright: the same window that manufactured 100% recall on
+    <code>go/uuid/callers-parse</code> also carried in the distractor that
+    failed it. Anything replacing ripgrep has to win on cost, precision, or
+    reach — not on "can it find things at all" — and the baseline's own flags
+    need tuning before its column is a fair floor.</li>
 
     <li><strong>Reach is where the gap is structural rather than
     incremental.</strong> rust-analyzer declined 5 of 10 — every non-Rust
@@ -1296,10 +1326,15 @@ cargo run --bin nbench -- run --config configs/ablations.toml</pre>
   <p>Every figure and table on this page is derived from
   <code>results/2026-08-30/report.json</code>, run
   <code>run-2026-08-30-165221</code>, recorded 2026-08-30. Nothing is
-  illustrative. Where this page differs slightly from the earlier chart deck in
-  the same directory, the numbers here were recomputed from the JSON: ripgrep's
-  cost is 9,658 tokens per scenario, not 9,392, making the overall ratio
-  7.6&times; rather than 7.4&times;.</p>
+  illustrative. Where this page differs from the earlier chart deck in the same
+  directory, the difference was checked against the JSON. Two corrections so
+  far: ripgrep's cost is 9,658 tokens per scenario, not 9,392, making the
+  overall ratio 7.6&times; rather than 7.4&times; — and the
+  <code>go/uuid/callers-parse</code> distractor did not arrive by matching
+  <code>\bParse\s*\(</code>, as <code>docs/DESIGN.md</code> states, but as a
+  <code>-B 12</code> context line from a test file. Both were found by
+  recomputing and re-deriving from <code>report.json</code> rather than
+  restating the earlier write-up.</p>
 </footer>
 
 </div>
