@@ -52,6 +52,31 @@ pub struct Attempt {
     /// the scorer reads and what a judge would be shown — the agent's-eye
     /// view of what the system said.
     pub context: String,
+    /// The part of `context` the adapter *deliberately* returned, when it can
+    /// tell the difference.
+    ///
+    /// # Why a second view of the same text
+    ///
+    /// A text search answers "who calls this" by printing the matching line
+    /// plus a window of the lines around it, because the line holding a call
+    /// names the callee and never the caller. That window is legitimate
+    /// evidence — see [`crate::adapter::ripgrep`] — but it is not the *same*
+    /// evidence as a line the tool actually matched, and a report that cannot
+    /// tell them apart cannot say whether a score was found or surrounded.
+    ///
+    /// Auditing `run-2026-08-30-165221` found three ripgrep verdicts —
+    /// including one pass — resting entirely on facts that appear only in
+    /// context lines. That is exactly the distinction `strict` versus `loose`
+    /// draws for *spelling*, drawn here for *provenance*, and it is the only
+    /// one available where a fact is a bare identifier (every Go and Python
+    /// scenario), because there `strict` and `loose` coincide by construction.
+    ///
+    /// `None` means the adapter has no incidental output: everything it
+    /// returned, it chose to return. That is the honest reading for Nudox and
+    /// for an LSP server, and it is why this is an `Option` rather than a
+    /// copy of `context`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primary_context: Option<String>,
     pub tool_calls: u32,
     pub cost: AttemptCost,
     pub elapsed_ms: u128,
@@ -87,6 +112,7 @@ impl Attempt {
             scenario_id: scenario.id.clone(),
             steps: Vec::new(),
             context: String::new(),
+            primary_context: None,
             tool_calls: 0,
             cost: AttemptCost::default(),
             elapsed_ms: 0,
@@ -131,6 +157,7 @@ pub struct AttemptBuilder {
     scenario_id: String,
     steps: Vec<Step>,
     context: String,
+    primary: Option<String>,
     cost: AttemptCost,
     started: std::time::Instant,
     keep_responses: bool,
@@ -144,6 +171,7 @@ impl AttemptBuilder {
             scenario_id: scenario.id.clone(),
             steps: Vec::new(),
             context: String::new(),
+            primary: None,
             cost: AttemptCost {
                 resident,
                 ..Default::default()
@@ -186,6 +214,21 @@ impl AttemptBuilder {
         });
     }
 
+    /// Record the primary-evidence subset of the step just added.
+    ///
+    /// Call this only from an adapter that can genuinely distinguish what it
+    /// matched from what it merely printed alongside. An adapter that never
+    /// calls it leaves [`Attempt::primary_context`] as `None`, which the
+    /// report reads as "all of this output is primary" — the correct claim
+    /// for a tool that returns only what it was asked for.
+    pub fn primary(&mut self, text: &str) {
+        let primary = self.primary.get_or_insert_with(String::new);
+        if !primary.is_empty() {
+            primary.push_str("\n\n");
+        }
+        primary.push_str(text);
+    }
+
     /// Record a degradation an adapter detected itself, rather than one read
     /// out of a response body.
     pub fn note_degraded(&mut self, note: impl Into<String>) {
@@ -212,6 +255,7 @@ impl AttemptBuilder {
             tool_calls: self.steps.len() as u32,
             steps: self.steps,
             context: self.context,
+            primary_context: self.primary,
             cost: self.cost,
             elapsed_ms: self.started.elapsed().as_millis(),
             unsupported: None,

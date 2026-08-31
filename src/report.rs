@@ -83,6 +83,10 @@ pub struct AdapterSummary {
     pub unscored: usize,
     pub errored: usize,
     pub mean_strict_recall: f64,
+    /// Strict recall counting only evidence the adapter matched, not text it
+    /// printed around a match. Equal to `mean_strict_recall` for adapters
+    /// with no incidental output, which is why the column is never blank.
+    pub mean_primary_strict_recall: f64,
     pub mean_loose_recall: f64,
     /// Mean of `loose - strict`: how much of the apparent success is
     /// unresolved text rather than resolved symbols.
@@ -167,6 +171,12 @@ impl RunReport {
                 entry.passed += 1;
             }
             entry.mean_strict_recall += outcome.score.strict_recall;
+            // An adapter that never reported a primary subset has no
+            // incidental output, so all of its strict recall is primary.
+            entry.mean_primary_strict_recall += outcome
+                .score
+                .primary_strict_recall
+                .unwrap_or(outcome.score.strict_recall);
             entry.mean_loose_recall += outcome.score.loose_recall;
             entry.mean_resolution_gap += outcome.score.resolution_gap();
             entry.total_distractors += outcome.score.distractors;
@@ -179,6 +189,7 @@ impl RunReport {
         for summary in &mut summaries {
             let n = summary.attempted.max(1) as f64;
             summary.mean_strict_recall /= n;
+            summary.mean_primary_strict_recall /= n;
             summary.mean_loose_recall /= n;
             summary.mean_resolution_gap /= n;
             summary.mean_tool_calls /= n;
@@ -242,16 +253,20 @@ impl RunReport {
         out.push_str(
             "`strict` counts a fact found as a fully-qualified path; `loose` counts it \
              found as a bare identifier anywhere in the returned text. The gap between \
-             them is how much of an adapter's apparent success is unresolved text.\n\n",
+             them is how much of an adapter's apparent success is unresolved text.\n\n\
+             `matched` counts only facts on a line the adapter actually matched, not \
+             ones it printed in the window around a match. Where it falls below \
+             `strict`, that much of the recall was surrounded rather than found. It \
+             equals `strict` for adapters that return only what they were asked for.\n\n",
         );
         out.push_str(
-            "| adapter | pass | attempted | unsup. | unscored | strict | loose | gap | \
+            "| adapter | pass | attempted | unsup. | unscored | strict | matched | loose | gap | \
              distractors | tok/scenario | tok/pass | calls |\n\
-             |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n",
+             |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n",
         );
         for s in &summaries {
             out.push_str(&format!(
-                "| {} | {}/{} ({:.0}%) | {} | {} | {} | {:.2} | {:.2} | {:.2} | {} | {:.0} | {} | {:.1} |\n",
+                "| {} | {}/{} ({:.0}%) | {} | {} | {} | {:.2} | {:.2} | {:.2} | {:.2} | {} | {:.0} | {} | {:.1} |\n",
                 s.adapter,
                 s.passed,
                 s.attempted,
@@ -260,6 +275,7 @@ impl RunReport {
                 s.unsupported,
                 s.unscored,
                 s.mean_strict_recall,
+                s.mean_primary_strict_recall,
                 s.mean_loose_recall,
                 s.mean_resolution_gap,
                 s.total_distractors,
@@ -374,6 +390,7 @@ mod tests {
             scenario_id: "s".into(),
             steps: vec![],
             context: String::new(),
+            primary_context: None,
             tool_calls: 1,
             cost: AttemptCost {
                 responses: TokenCount {

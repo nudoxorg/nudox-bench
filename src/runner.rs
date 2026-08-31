@@ -113,7 +113,14 @@ pub async fn run(
         for scenario in scenarios {
             tracing::info!("{} → {}", adapter.name(), scenario.id);
             let attempt = adapter.attempt(scenario).await;
-            let score = crate::truth::score(scenario, &attempt.context);
+            let mut score = crate::truth::score(scenario, &attempt.context);
+            // Where an adapter can say which of its output it actually
+            // matched, score that subset too. The difference is how much of
+            // the recall came from surrounding text rather than a hit.
+            if let Some(primary) = attempt.primary_context.as_deref() {
+                score.primary_strict_recall =
+                    Some(crate::truth::score(scenario, primary).strict_recall);
+            }
 
             let verdict = match (&judge, score.judged, attempt.unsupported.is_some()) {
                 (Some(judge), true, false) => match judge.judge(scenario, &attempt.context).await {

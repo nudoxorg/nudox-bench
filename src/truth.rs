@@ -64,6 +64,14 @@ pub struct DeterministicScore {
     pub facts: Vec<FactVerdict>,
     /// Set when the scenario is judged rather than matched.
     pub judged: bool,
+    /// Strict recall counting only evidence the adapter actually matched,
+    /// rather than text it printed around a match.
+    ///
+    /// `None` for an adapter with no incidental output — everything it
+    /// returned, it chose to return, so this would equal `strict_recall`.
+    /// See [`crate::adapter::Attempt::primary_context`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primary_strict_recall: Option<f64>,
 }
 
 impl DeterministicScore {
@@ -218,6 +226,10 @@ pub fn score(scenario: &Scenario, returned_text: &str) -> DeterministicScore {
         any_of_satisfied,
         facts,
         judged: false,
+        // Filled in by the runner for adapters that can distinguish matched
+        // evidence from surrounding text; this function scores whatever text
+        // it is handed and does not know which kind it is.
+        primary_strict_recall: None,
     }
 }
 

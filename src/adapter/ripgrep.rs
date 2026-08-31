@@ -19,6 +19,7 @@
 //!   real agent would spend", and the `truth.none_of` distractor sets are
 //!   what stop a wide net from scoring as a clean answer.
 
+use std::path::Path;
 use std::process::Stdio;
 use std::time::Instant;
 
@@ -30,6 +31,79 @@ use crate::scenario::{Scenario, TaskKind};
 /// would paste, and deliberately generous so the cap cannot be blamed for a
 /// poor score.
 pub const MAX_OUTPUT_BYTES: usize = 100_000;
+
+/// Paths excluded from every search.
+///
+/// # Why this exists, and why it makes the floor *stronger*
+///
+/// Every scenario here asks about a library's own surface or its internal
+/// call graph, and every ground truth in `scenarios/` was derived by reading
+/// library source. A package's tests can therefore contribute false
+/// positives but never an expected fact.
+///
+/// That is not a hypothesis. Auditing the stored payloads of
+/// `run-2026-08-30-165221` (see `results/2026-08-30/payload-audit.md`) found
+/// that on `go/uuid/callers-parse` **82% of the returned lines came from
+/// `_test.go` files**, and that the only distractor recorded anywhere in that
+/// run — `ParseBytes` — was dragged in by a `-B 12` window opened around a
+/// call site inside `uuid_test.go`. The expected callers (`MustParse` in
+/// `uuid.go`, `Scan` in `sql.go`) were both in library source and survive
+/// this exclusion.
+///
+/// So the effect of this list is fewer tokens and fewer false positives, both
+/// in ripgrep's favour. A developer asking "who calls this" scopes the search
+/// the same way; leaving tests in was measuring the harness's invocation
+/// rather than the tool.
+const EXCLUDE: &[&str] = &[
+    "!**/*_test.go",
+    "!**/*_test.rs",
+    "!**/test_*.py",
+    "!**/*_test.py",
+    "!**/*.test.ts",
+    "!**/*.test.js",
+    "!**/*.spec.ts",
+    "!**/*.spec.js",
+    "!**/tests/**",
+    "!**/test/**",
+    "!**/testdata/**",
+    "!**/__tests__/**",
+    "!**/node_modules/**",
+    "!**/vendor/**",
+    "!**/target/**",
+];
+
+/// `--glob` flags for [`EXCLUDE`], ready to splice in front of a pattern's
+/// own arguments.
+///
+/// # Why the root has to be consulted
+///
+/// rg matches a glob against the path it prints, which includes the search
+/// root. So `!**/node_modules/**` does not mean "skip nested dependencies"
+/// when the root *is* `…/node_modules/commander` — it means "skip
+/// everything", and the adapter returns nothing at all.
+///
+/// That is measured, not imagined: the first run with these exclusions turned
+/// `ts/commander/public-surface` from a pass into 0% recall on 149 tokens,
+/// because every file in the package sat under an excluded segment. A
+/// directory exclusion is therefore dropped whenever the root is already
+/// inside a directory of that name.
+fn exclude_args(root: &Path) -> Vec<String> {
+    let root = root.to_string_lossy().into_owned();
+    EXCLUDE
+        .iter()
+        .filter(|glob| match dir_segment(glob) {
+            Some(segment) => !root.split('/').any(|component| component == segment),
+            None => true,
+        })
+        .flat_map(|glob| ["--glob".to_owned(), (*glob).to_owned()])
+        .collect()
+}
+
+/// The directory name a `!**/<name>/**` exclusion is about, or `None` for a
+/// file-name pattern like `!**/*_test.go`, which can never swallow a root.
+fn dir_segment(glob: &str) -> Option<&str> {
+    glob.strip_prefix("!**/")?.strip_suffix("/**")
+}
 
 /// Text search over a package checkout.
 pub struct RipgrepAdapter {
@@ -188,6 +262,12 @@ impl Adapter for RipgrepAdapter {
 
         for (label, args) in patterns {
             let started = Instant::now();
+            // The exclusions are part of the invocation, so they are rendered
+            // into the recorded command and charged for like any other flag.
+            let mut args = args;
+            let mut full = exclude_args(root);
+            full.append(&mut args);
+            let args = full;
             let rendered = format!("rg {} {}", args.join(" "), root.display());
             let output = tokio::process::Command::new("rg")
                 .args(&args)
@@ -229,11 +309,59 @@ impl Adapter for RipgrepAdapter {
             if is_error {
                 error.get_or_insert_with(|| text.clone());
             }
+            let matched = matched_lines(&text);
             builder.step(label, rendered, &text, started.elapsed(), is_error);
+            builder.primary(&matched);
         }
 
         builder.finish(error)
     }
+}
+
+/// Keep only the lines ripgrep *matched*, discarding the `-A`/`-B` window.
+///
+/// With `-n --no-heading`, rg writes a matched line as `path:line:text` and a
+/// context line as `path-line-text`. That single character is the whole
+/// signal, and it is the only place in this harness where "the tool found
+/// this" can be told apart from "the tool printed this nearby".
+///
+/// The separator is located after a path ending in a file extension, because a
+/// path can itself contain both `:` and `-` (`uuid@v1.6.0/`), so scanning for
+/// the first `[:-]` would misread most Go module paths.
+fn matched_lines(text: &str) -> String {
+    text.lines()
+        .filter(|line| is_match_line(line))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Whether one rendered rg line is a match rather than context.
+fn is_match_line(line: &str) -> bool {
+    // Find `<path><sep><digits><sep>` where <path> ends at a file extension.
+    let bytes = line.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if c == b':' || c == b'-' {
+            // Digits must follow, then the same class of separator again.
+            let mut j = i + 1;
+            while j < bytes.len() && bytes[j].is_ascii_digit() {
+                j += 1;
+            }
+            if j > i + 1 && j < bytes.len() && (bytes[j] == b':' || bytes[j] == b'-') {
+                // Only accept it if what precedes looks like a file, so that
+                // `uuid@v1.6.0` and similar are not mistaken for the anchor.
+                let head = &line[..i];
+                if head.rsplit('/').next().is_some_and(|f| f.contains('.')) {
+                    return c == b':';
+                }
+            }
+            i = j.max(i + 1);
+        } else {
+            i += 1;
+        }
+    }
+    false
 }
 
 /// Escape a literal for use inside a regex.
@@ -263,5 +391,67 @@ mod tests {
     fn diff_is_declined_rather_than_faked() {
         let scenario = crate::testing::diff_scenario();
         assert!(RipgrepAdapter::patterns(&scenario).is_empty());
+    }
+
+    /// The whole matched-versus-context distinction rests on one character,
+    /// and the paths it has to survive are hostile: a Go module path carries
+    /// both `@` and dots, and a cargo registry path carries dashes and dots.
+    #[test]
+    fn match_lines_are_told_apart_from_context_lines() {
+        // The real shapes, taken from run-2026-08-30-165221.
+        let m = "/home/leaf/go/pkg/mod/github.com/google/uuid@v1.6.0/uuid.go:245:\tif err := uuid.Parse(s); err != nil {";
+        let c = "/home/leaf/go/pkg/mod/github.com/google/uuid@v1.6.0/uuid.go-164-// MustParse is like Parse but panics";
+        assert!(is_match_line(m), "matched line must be recognised");
+        assert!(!is_match_line(c), "context line must not count as a match");
+
+        let rs = "/home/leaf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/memchr-2.8.3/src/memchr.rs:31:    search_slice_with_raw(";
+        assert!(is_match_line(rs), "a registry path full of dashes is still a match");
+
+        // A separator inside the version must not be mistaken for the anchor.
+        let ctx_rs = "/home/leaf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/memchr-2.8.3/src/memchr.rs-29-pub fn memchr(";
+        assert!(!is_match_line(ctx_rs));
+
+        assert!(!is_match_line("(no matches)"));
+        assert!(!is_match_line(""));
+    }
+
+    #[test]
+    fn only_matched_lines_survive_the_filter() {
+        let payload = "a/b.go:10:hit\na/b.go-9-near\na/b.go:12:hit2\n";
+        assert_eq!(matched_lines(payload), "a/b.go:10:hit\na/b.go:12:hit2");
+    }
+
+    /// Tests are excluded from every search: they can contribute false
+    /// positives but never an expected fact, which the payload audit of
+    /// run-2026-08-30-165221 demonstrated rather than assumed.
+    #[test]
+    fn test_files_are_excluded_from_every_search() {
+        let args = exclude_args(Path::new("/pkgs/memchr-2.8.3"));
+        assert!(args.iter().any(|a| a == "!**/*_test.go"));
+        assert!(args.iter().any(|a| a == "!**/tests/**"));
+        assert_eq!(args.iter().filter(|a| *a == "--glob").count(), EXCLUDE.len());
+    }
+
+    /// A directory exclusion must never swallow the search root. This is the
+    /// `ts/commander/public-surface` regression, pinned: the package lives
+    /// *inside* `node_modules`, so excluding that directory excluded the
+    /// entire package and scored 0% on 149 tokens.
+    #[test]
+    fn an_exclusion_never_swallows_the_root() {
+        let args = exclude_args(Path::new("/home/x/context-bench/node_modules/commander"));
+        assert!(
+            !args.iter().any(|a| a == "!**/node_modules/**"),
+            "the root is inside node_modules, so that exclusion must be dropped"
+        );
+        // File-level exclusions are unaffected: they cannot match a directory.
+        assert!(args.iter().any(|a| a == "!**/*.test.js"));
+        // And an unrelated directory exclusion still applies.
+        assert!(args.iter().any(|a| a == "!**/vendor/**"));
+    }
+
+    #[test]
+    fn directory_segments_are_read_off_the_glob() {
+        assert_eq!(dir_segment("!**/node_modules/**"), Some("node_modules"));
+        assert_eq!(dir_segment("!**/*_test.go"), None);
     }
 }
