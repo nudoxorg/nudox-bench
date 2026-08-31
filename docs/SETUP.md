@@ -292,11 +292,40 @@ A model that is *present but broken* reports `ModelFailed` rather than
 `NoModelConfigured` — a different failure pointing at a missing file, a bad
 hash, or an out-of-memory runtime.
 
-Two operational facts, both learned the hard way on 2026-08-30:
+### What the embedder costs, measured
 
-* **It costs memory.** With the embedder loaded over five packages the
-  endpoint held ~4.8 GB resident. Running a `cargo build --release` beside it
-  got the endpoint OOM-killed mid-run.
+**~4.9 GB, flat, regardless of corpus size.** With a single small package
+(memchr) loaded, resident memory goes:
+
+```
+t=15s  RSS=0.58 GB          ← producers running
+t=25s  RSS=4.50 GB          ← the model loads
+t=30s  RSS=4.87 GB          ← and then it does not move
+```
+
+That is the ONNX arena, allocated once. The corpus adds only ~0.2–0.5 GB on
+top, which is why **trimming packages does not help**: five packages cost
+5.4 GB and two cost 5.2 GB. Budget ~5.5 GB free for the endpoint, whatever you
+are indexing.
+
+Three things follow, all learned by being killed:
+
+* **Check `MemAvailable`, not total RAM.** On a 16 GB machine with an editor
+  open, two `rust-analyzer` processes held 2.3 GB and left 5.08 GB available —
+  enough to *start* the endpoint and not enough to keep it. Closing them took
+  available to 8.77 GB, which is comfortable.
+* **Have some swap.** A machine with `SwapTotal: 0` gives a transient spike
+  nowhere to go, so it becomes an instant kill rather than a slowdown.
+* **Do not build and serve at once.** A `cargo build --release` beside a
+  running endpoint got the endpoint OOM-killed mid-session.
+
+There is no knob for this: `MAX_BATCH` is a compile-time constant in
+`nudox-engine`'s `embed/onnx.rs`, mirroring a private constant in `registry`,
+not an environment variable.
+
+Two more operational facts:
+
+* **It costs memory** — see above.
 * **Embeddings are built after a package loads, not before.** A question asked
   too early gets `~sem:building(0/1)` and can score zero on a package that
   would otherwise answer. `py/requests/callers-api-request` did exactly that —
@@ -489,7 +518,7 @@ There is deliberately no single headline score — see
 | `` `#![feature]` may not be used on the stable release channel `` | built the endpoint from the repo root | `cd endpoint` first — the toolchain is resolved from the working directory |
 | `failed to authenticate when downloading repository` | building `nudox-engine` from inside Backend's workspace | build via `endpoint/`, which stands outside that workspace |
 | `could not compile pyrefly … (signal: 9, SIGKILL)` | the OOM killer — `pyrefly` and `ra_ap_*` are large, and `-C opt-level=3` codegen holds a lot per job | `cargo build --release -j 2`, and stop any running endpoint first (it holds an indexed corpus in memory) |
-| the endpoint vanishes mid-run; `Connection refused` on the next call | the OOM killer again — with the embedder loaded the endpoint held **4.8 GB RSS** over five packages, and a concurrent release build pushed the machine over | do not build and serve at the same time; index fewer packages, or run the endpoint on a machine with headroom |
+| the endpoint vanishes mid-run; `Connection refused` on the next call | the OOM killer — the embedder alone is **~4.9 GB resident**, flat, and the machine had less than that free | free memory before starting (`MemAvailable` ≥ ~5.5 GB), add swap, and never build beside a running endpoint. Indexing fewer packages barely helps: the cost is the model, not the corpus |
 | `~sem:building(0/1)` in a response, and a scenario scores 0 | the semantic index was still being built when the question arrived — embeddings are computed after a package loads, not before | wait for it to settle after start-up before running, or the run measures a warm-up race rather than the tool |
 | `no such file or directory: ../../Backend/...` | Backend is not a sibling, or you are in a git worktree | put the checkouts side by side; build from the main checkout |
 | `MISSING ${NODE_MODULES}/commander` | the variable is unset and survived into the path verbatim | `export NODE_MODULES=…` |
