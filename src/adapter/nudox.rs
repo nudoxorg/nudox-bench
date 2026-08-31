@@ -865,16 +865,40 @@ fn pick_hit<'a>(hits: &'a [Hit], scenario: &Scenario) -> Option<&'a Hit> {
     if wanted.is_empty() {
         return hits.first();
     }
-    hits.iter()
-        .max_by_key(|hit| {
-            let text = hit
-                .address
-                .as_deref()
-                .or(hit.key.as_deref())
-                .unwrap_or_default();
-            common_suffix_len(&segments(text), &wanted)
-        })
-        .or_else(|| hits.first())
+    let name = wanted.last().cloned().unwrap_or_default();
+
+    // Score, then take the FIRST best rather than the last.
+    //
+    // Two things go wrong otherwise, and semantic ranking surfaced both.
+    //
+    // `max_by_key` returns the *last* maximum, so when nothing matches every
+    // candidate ties at zero and the adapter follows whichever hit happens to
+    // be last. Measured: searching `search_slice_with_raw` with the embedder
+    // on returned fifty semantically-ranked hits that did not include the
+    // exact match, and the adapter went to
+    // `memmem::'impl Iterator for FindIter'` — an arbitrary tie-break — whose
+    // `refs` were empty, scoring 0% on a scenario that passes structurally.
+    //
+    // So: a hit whose final segment *is* the name searched for wins outright
+    // (if you asked for a name and something is called that, it is your
+    // symbol), then the longest shared path suffix, and ties fall back to the
+    // server's own ranking, which is the one piece of judgement the harness
+    // has no business overriding.
+    let mut best: Option<(&Hit, (u8, usize))> = None;
+    for hit in hits {
+        let text = hit
+            .address
+            .as_deref()
+            .or(hit.key.as_deref())
+            .unwrap_or_default();
+        let parts = segments(text);
+        let exact = u8::from(parts.last().is_some_and(|last| *last == name));
+        let score = (exact, common_suffix_len(&parts, &wanted));
+        if best.is_none_or(|(_, current)| score > current) {
+            best = Some((hit, score));
+        }
+    }
+    best.map(|(hit, _)| hit).or_else(|| hits.first())
 }
 
 /// Split an address or a qualified path into lowercase segments, dropping the
@@ -1209,6 +1233,48 @@ package: `npm:commander`
         assert_eq!(
             pick_hit(&hits, &scenario).unwrap().address.as_deref(),
             hits[0].address.as_deref()
+        );
+    }
+
+    /// With the embedder on, a search for a name can come back ranked by
+    /// similarity with the exact match nowhere in it. Every candidate then
+    /// ties, and `max_by_key` would hand back the *last* one — which is how a
+    /// scenario that passes structurally scored 0% on `refs` against
+    /// `memmem::'impl Iterator for FindIter'`.
+    #[test]
+    fn a_tie_falls_back_to_the_servers_ranking() {
+        let hit = |address: &str| Hit {
+            address: Some(address.to_owned()),
+            key: None,
+        };
+        let hits = vec![
+            hit("cargo:memchr::arch::all::rabinkarp::'impl Finder'::find_raw[function]"),
+            hit("cargo:memchr::memmem::'impl Iterator for FindIter'[impl]"),
+        ];
+        let mut scenario = crate::testing::scenario_with_truth(crate::scenario::Truth {
+            mode: crate::scenario::TruthMode::SymbolSet,
+            all_of: vec!["memchr::memchr".into()],
+            any_of: Vec::new(),
+            none_of: Vec::new(),
+            oracle: None,
+            sources: Vec::new(),
+        });
+        scenario.probe.symbol =
+            Some("memchr::arch::generic::memchr::search_slice_with_raw".into());
+
+        assert_eq!(
+            pick_hit(&hits, &scenario).unwrap().address.as_deref(),
+            hits[0].address.as_deref(),
+            "nothing matches, so the server's first hit stands"
+        );
+
+        // And an exact name match beats everything, wherever it ranks.
+        let mut with_exact = hits.clone();
+        with_exact.push(hit("cargo:memchr::arch::generic::memchr::search_slice_with_raw[function]"));
+        assert_eq!(
+            pick_hit(&with_exact, &scenario).unwrap().address.as_deref(),
+            with_exact[2].address.as_deref(),
+            "the symbol actually named in the probe wins from last place"
         );
     }
 
