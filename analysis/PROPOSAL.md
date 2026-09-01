@@ -8,6 +8,16 @@ here.
 **Two corrections to the brief are recorded in §0.** One of them removes an
 option the brief treated as available.
 
+> **Superseded in part — read `analysis/MEASUREMENT.md` first.** R1 and R2 were
+> implemented and measured on 2026-09-01
+> ([`results/2026-09-01-exact-match-tier`](../results/2026-09-01-exact-match-tier)).
+> **H3, H4, H7 and H8 are resolved and E4 is now measured**, so the §4
+> hypotheses and the §2 token estimates should be read through that document,
+> not from here. **R3, R5 and R8 are withdrawn** — R1 fixed the defect on the
+> default path, so there is nothing left to route around. §1 and §3's reasoning
+> stands; one defect it did not reach (prefix name matches displaced by semantic
+> rows) is measured in `MEASUREMENT.md` §4.
+
 ---
 
 ## 0. Corrections to the established block
