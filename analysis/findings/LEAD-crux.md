@@ -133,6 +133,28 @@
   comparability, or a normalisation step between the sections.
 - would falsify: a rescaling of either section before the merge.
 
+### CL.8 — `pub(crate)` in Rust source records as `IrVisibility::Crate`, so the 0.6 weight applies
+- status: READ
+- evidence: /home/leaf/Dev/nudox/Backend/workspace/compiler/languages/src/rust/ra/ctx.rs:384-387
+- quote:
+  ```rust
+  pub(crate) fn visibility(&self, def: impl HasVisibility) -> IrVisibility {
+      match def.visibility(self.db) {
+          Visibility::Public => IrVisibility::Public,
+          Visibility::PubCrate(_) => IrVisibility::Crate,
+  ```
+- bears on: A2, F1
+- would falsify: the search path reading a visibility field other than the one
+  this producer writes.
+- note: raised by the synthesis agent, correctly, against an earlier version of
+  CL.6. What the measured payload showed was the *rendered Rust text*
+  `pub(crate) unsafe fn search_slice_with_raw`; the enum the producer records is
+  a separate value, and CL.6 asserted the link without establishing it. This
+  quote establishes it: rust-analyzer's `PubCrate` maps to `IrVisibility::Crate`,
+  which `visibility_weight` scores 0.6 (CL.3). The `cos > 0.2` threshold in CL.6
+  therefore stands. Had it recorded as `Private` (0.4) the threshold would be
+  `cos > -0.2`, i.e. satisfied by every symbol in the corpus.
+
 ## Unanswered
 - Whether the name section is *fetched* at all for this query under the
   embedder-on path, or fetched and then outranked. CL.5 makes outranking
