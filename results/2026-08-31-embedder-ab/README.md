@@ -93,6 +93,46 @@ symbol the results do not contain.
 because its answer comes from `graph`, which does not depend on search ranking
 at all. It is the only policy semantic ranking did not disturb.
 
+## Addendum — how much of this was the harness's fault
+
+`run-2026-08-31-202901`, same endpoint configuration, after the
+case-sensitivity fix to `pick_hit`.
+
+| | before the fix | after |
+|---|---:|---:|
+| `nudox-full` pass | 3/5 | 3/5 |
+| `nudox-full` strict | 0.83 | 0.83 |
+| `nudox-full` **matched** | **0.63** | **0.83** |
+
+**The pass rate did not move and that is the point.** What moved is `matched`
+— strict recall counting only the adapter's *answer* rather than everything it
+surfaced. On `rust/memchr/signature-memchr3`:
+
+| | before | after |
+|---|---|---|
+| `read` request | `cargo:memchr::Memchr3[record]` | `cargo:memchr::memchr3[function]` |
+| `read` returned | `pub struct Memchr3<'h>` | `pub fn memchr3(needle1: u8, …) -> Option<usize>` |
+| strict | 1.00 | 1.00 |
+| **primary_strict** | **0.00** | **1.00** |
+
+Before the fix the scenario passed on text the *search listing* happened to
+carry, while the answer it actually fetched was the wrong declaration — a
+same-named struct instead of the function. `strict` could not see that;
+`matched` could, and it is the only column that did. This is the first time the
+provenance split has caught a pass for the wrong reason, which is what it was
+added for.
+
+So of the regression this page reports: **one scenario was the harness's fault
+and is now fixed**, and it never showed up in the headline number either way.
+The remaining two failures are not the harness's:
+
+* `memchr/callers-search-slice-with-raw` — the exact match is absent from all
+  fifty semantic rows. No harness change can pick a symbol the results do not
+  contain. See `analysis/PROPOSAL.md` §1.3.
+* `memchr/iter-return-type` — 100% recall, failed on two distractors that are
+  in the search listing and **not** in the answer (`2→0`). That is the scoring
+  rule, still deliberately unchanged.
+
 ## Scope, and what it cost to get here
 
 * Two packages (memchr, commander), five scenarios attempted, four declined.
