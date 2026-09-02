@@ -157,33 +157,85 @@ diff against any second run. Standard library, matplotlib and one vendored copy
 of htmx: no framework, no build step, no network.
 See [docs/RESULTS-DB.md](docs/RESULTS-DB.md).
 
+## Reviewable artifacts
+
+Published write-ups of the current investigation. They are **private until
+shared** — open one and use its share menu to give someone else access.
+
+| page | what it covers |
+|---|---|
+| [Nudox Bench Board](https://claude.ai/code/artifact/1f9faffb-117f-4086-93ac-b1cc467537ab) | The standing board: competitive position, what each of the ten worktrees settled, and what is still open. Start here. |
+| [Why Nudox Misses Two of Nine](https://claude.ai/code/artifact/d17ac22e-b24d-4aa4-8011-c2c9d8ba741b) | The two remaining `nudox-full` failures on the expanded corpus, which have nothing in common — and the one measured change that raises the pass rate. |
+| [Demand-Gated Semantic Search](https://claude.ai/code/artifact/2107535e-5d74-41b9-9cc2-3f9e0b704644) | What the embedder is actually worth per fact, why two scoring fixes were null, and the page-budget rule that was built and measured. |
+
+The same material in the repo, in reading order:
+[`analysis/EVIDENCE.md`](analysis/EVIDENCE.md) →
+[`analysis/PROPOSAL.md`](analysis/PROPOSAL.md) →
+[`analysis/MEASUREMENT.md`](analysis/MEASUREMENT.md) →
+[`analysis/DYNAMIC-EMBEDDER.md`](analysis/DYNAMIC-EMBEDDER.md).
+
 ## Results
 
-The first full run — all five Nudox policies against both baselines — is in
-[`results/2026-08-30/`](results/2026-08-30), with `report.md` and `report.json`
-beside the charts. [`protocol.html`](results/2026-08-30/protocol.html) is the
-written result: what came back, how every number was recorded and scored, and
-which claims the method supports.
+The current numbers are in
+[`results/2026-09-02-expanded/`](results/2026-09-02-expanded) — nine scenarios
+every adapter answered, both with and without the semantic section, each arm
+verified to be one system (`ready×47` / `unavailable×47` on every search step).
 
-The headline, stated carefully: on the five scenarios both systems attempted,
-Nudox answered in **785 tokens per question against ripgrep's 9,853**, with a
-resolution gap of zero — and passed 3 of 5 to ripgrep's 4 (on the four Rust
-scenarios alone, both pass 3 of 4). *Same answers, a fraction of the context*
-is supported by that run. *More correct answers* is not.
+| adapter | pass | strict | tok/scenario | tok/fact |
+|---|---:|---:|---:|---:|
+| **nudox-full** *(embedder off)* | **7/9** | 0.89 | **6,076** | **882** |
+| nudox-full *(embedder on, warm)* | 7/9 | **1.00** | 11,297 | 1,564 |
+| ripgrep | 6/9 | 0.85 | 9,551 | 1,653 |
+| nudox-search-only *(on, warm)* | 4/9 | 0.80 | 5,598 | 969 |
+| nudox-search-only *(off)* | 3/9 | 0.42 | 378 | 148 |
+
+Stated carefully: **Nudox beats the ripgrep floor on all three axes at once** —
+one more pass, higher strict recall, and 1.6× cheaper per scenario. That is a
+stronger claim than the 2026-08-30 run supported (*same answers, a fraction of
+the context*), and it rests on nine scenarios rather than five.
+
+The semantic section should be **on for `search-only` and off for the
+graph-equipped policies**: its marginal price is 1,953 tokens per fact for the
+former and ~46,000 for the latter, a 24× difference, because the policies with
+a graph tool already reach those facts another way.
+
+Earlier runs, in order:
+[`2026-08-30`](results/2026-08-30) (first full run, with charts and
+[`protocol.html`](results/2026-08-30/protocol.html)) ·
+[`2026-08-31-graph-fixed`](results/2026-08-31-graph-fixed) (structural
+reference) · [`2026-08-31-embedder-ab`](results/2026-08-31-embedder-ab) ·
+[`2026-09-01-exact-match-tier`](results/2026-09-01-exact-match-tier) ·
+[`2026-09-02-warm-ab`](results/2026-09-02-warm-ab).
 
 ## Status
 
 * **Baselines** — working, producing the numbers above.
 * **`endpoint/`** — builds and starts a real MCP endpoint over real indexed
-  packages, outside nix, without `clang`. It now also installs the semantic
-  embedder from `NUDOX_EMBED_MODEL_DIR`, which it previously could not: the
-  engine takes an embedder from its host, and this one never supplied one, so
-  every published Nudox number so far is **structural-only ranking**.
+  packages, outside nix, without `clang`, and installs the semantic embedder
+  from `NUDOX_EMBED_MODEL_DIR`.
+* **Semantic search** — measured, both ways, on the expanded corpus. One
+  caution that costs real time if missed: **the endpoint answers before its
+  semantic index exists.** It prints its URL and `semantic search: on` as soon
+  as the packages are indexed, but embeddings are built lazily and per package —
+  `npm:commander` was ready in under two minutes and `cargo:memchr` took **510
+  seconds**. In between, search silently returns structural rows only. Gate on
+  the marker in the response, not the banner:
+  `python3 scripts/wait_semantic.py` (`PROBE_PACKAGE=cargo:memchr`), and check
+  a finished run with `python3 scripts/head2head.py runs/<run>/report.json`,
+  which flags a run whose steps disagree as `** MIXED — not one system **`.
 * **The Nudox adapter** — wired end to end, with five client-side ablations,
   and exercised by the 2026-08-30 run.
-* **Not yet measured** — semantic search (see above), Go and Python (the
-  producers need an oracle and a source checkout, [SETUP.md §3](docs/SETUP.md)),
-  the implementation scenarios (no judge key that run), and any third-party MCP
-  server: `AdapterConfig::McpStdio` is declared in config but the harness still
-  refuses it as not wired. **There is no measured comparison against Context7,
-  Deepcon, Exa or NIA** — the only baselines are ripgrep and rust-analyzer.
+* **Known defects the benchmark found** — a TypeScript class's `extends` clause
+  is absent from the IR, so `class InvalidArgumentError extends CommanderError`
+  renders as `pub struct InvalidArgumentError` and no inheritance question is
+  answerable for TypeScript (`ts/commander/error-types` scores strict 0.00
+  against ripgrep's pass). Separately, `nudox-full` follows a precise 716-token
+  search answer with a 12,004-token whole-surface `graph` dump, which injects
+  the distractors that fail `rust/memchr/reverse-search-family` — the same
+  scenario `nudox-search-only` passes by doing less.
+* **Not yet measured** — Go and Python (the producers need an oracle and a
+  source checkout, [SETUP.md §3](docs/SETUP.md)), the implementation scenarios
+  (no judge key), and any third-party MCP server: `AdapterConfig::McpStdio` is
+  declared in config but the harness still refuses it as not wired. **There is
+  no measured comparison against Context7, Deepcon, Exa or NIA** — the only
+  baselines are ripgrep and rust-analyzer.
