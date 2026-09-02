@@ -1,0 +1,40 @@
+# src/lib.rs:203-207 — the six `memrchr*` re-exports.
+id = "rust/memchr/reverse-search-family"
+family = "retrieval"
+task = "overview"
+question = "Which functions in the memchr crate search a haystack from the end backwards?"
+
+[target]
+ecosystem = "crates.io"
+package = "memchr"
+version = "2.8.3"
+root = "${CARGO_SRC}/memchr-2.8.3"
+
+[probe]
+query = "search bytes backwards from the end"
+name = "memrchr"
+
+[truth]
+mode = "symbol_set"
+all_of = [
+  "memrchr", "memrchr2", "memrchr3",
+  "memrchr_iter", "memrchr2_iter", "memrchr3_iter",
+]
+none_of = ["memchr_iter", "memchr2_iter", "memchr3_iter"]
+
+[budget]
+max_tool_calls = 2
+token_budget = 1500
+
+notes = """
+The one scenario on this corpus that a prefix index structurally cannot answer.
+`NameIndex::prefix` is a `starts_with` scan, so no query that begins "memchr"
+ever reaches `memrchr`, and the question is posed the way a caller who does not
+already know the name would pose it — by describing the behaviour.
+
+That makes this the honest test of what the semantic section is for. It is also
+why `none_of` names the three *forward* iterators: a system that answers "which
+ones go backwards" by dumping the whole export list has not answered the
+question, and the union scoring rule would otherwise credit it for the six
+names buried in the dump.
+"""

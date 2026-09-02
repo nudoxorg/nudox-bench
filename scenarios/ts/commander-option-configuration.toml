@@ -1,0 +1,39 @@
+# lib/option.js — the chainable configuration methods on the Option class.
+id = "ts/commander/option-configuration"
+family = "polyglot"
+task = "overview"
+question = "What methods does commander's `Option` class provide for configuring an option?"
+
+[target]
+ecosystem = "npm"
+package = "commander"
+version = "12.1.0"
+root = "${NODE_MODULES}/commander"
+
+[probe]
+query = "Option"
+name = "Option"
+symbol = "commander.Option"
+
+[truth]
+mode = "symbol_set"
+all_of = [
+  "default", "preset", "conflicts", "implies", "env",
+  "argParser", "makeOptionMandatory", "hideHelp", "choices",
+]
+
+[budget]
+max_tool_calls = 3
+token_budget = 4000
+
+notes = """
+Class members rather than module exports, in the ecosystem where Nudox's
+producer has the least to work with. `name`, `attributeName`, `is` and
+`isBoolean` are public but query the option rather than configure it, so they
+are out of `all_of` — the question asks what configures one.
+
+This pairs with `ts/commander/public-surface`: that scenario asks what the
+entry point exports, this one asks what is *inside* one of those exports. A
+system that can only enumerate the top level answers the first and not the
+second.
+"""

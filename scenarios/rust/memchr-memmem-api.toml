@@ -1,0 +1,41 @@
+# src/memmem/mod.rs — the substring-search surface: four free functions,
+# three builder/searcher types and two iterators.
+id = "rust/memchr/memmem-api"
+family = "retrieval"
+task = "overview"
+question = "What does the `memchr::memmem` module provide for substring search?"
+
+[target]
+ecosystem = "crates.io"
+package = "memchr"
+version = "2.8.3"
+root = "${CARGO_SRC}/memchr-2.8.3"
+
+[probe]
+query = "memmem"
+name = "memmem"
+symbol = "memchr::memmem"
+
+[truth]
+mode = "symbol_set"
+all_of = [
+  "find", "rfind", "find_iter", "rfind_iter",
+  "Finder", "FinderRev", "FinderBuilder",
+]
+
+[budget]
+max_tool_calls = 3
+token_budget = 4000
+
+notes = """
+Enumerating a submodule, rather than the crate root. The names inside it —
+`find`, `rfind`, `Finder` — share no prefix with the module that contains them,
+so a system that answers by prefix-matching the query `memmem` gets the module
+and stops. Reaching the members needs either a graph edge (module → children)
+or an embedding that puts substring-search vocabulary near the query.
+
+`FindIter` and `FindRevIter` are public too but are left out of `all_of`: they
+are the return types of `find_iter`/`rfind_iter` rather than things a caller
+names directly, and a tool that lists only the entry points should not be
+marked down.
+"""

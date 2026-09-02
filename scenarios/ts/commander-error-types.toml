@@ -1,0 +1,36 @@
+# lib/error.js:4,25 — CommanderError, and InvalidArgumentError extending it.
+id = "ts/commander/error-types"
+family = "polyglot"
+task = "signature"
+question = "What error class does commander's `InvalidArgumentError` extend?"
+
+[target]
+ecosystem = "npm"
+package = "commander"
+version = "12.1.0"
+root = "${NODE_MODULES}/commander"
+
+[probe]
+query = "InvalidArgumentError"
+name = "InvalidArgumentError"
+symbol = "commander.InvalidArgumentError"
+kind = "class"
+
+[truth]
+mode = "literal"
+all_of = ["CommanderError"]
+none_of = ["TypeError", "RangeError"]
+
+[budget]
+max_tool_calls = 2
+token_budget = 800
+
+notes = """
+A one-word answer, and the cheap counterpart to the two `public-surface`
+overviews: an exact name the caller already knows, in the TypeScript half of
+the corpus. `iter-return-type` asks the same shape of question on the Rust
+side, and the pair is what makes a per-ecosystem comparison possible at all.
+
+`none_of` holds two built-in error types a system might reach for if it
+answered from the word "Error" rather than from the declaration.
+"""
