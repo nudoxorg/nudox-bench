@@ -197,6 +197,45 @@ lockfile — which makes cargo resolve only what `nudox-engine` actually needs.
 It is the same trick `lindsey` uses for the opposite reason (keeping gpui out
 of the backend graph).
 
+### Running `nudox-engine`'s own tests
+
+`endpoint/` gets the engine *compiled*, which is enough to check a change
+builds. It does not run the engine's tests: cargo does not run a dependency's
+test targets, and `cargo test -p nudox-engine` inside Backend hits the same
+resolution wall.
+
+One line unblocks it. The dependency that cannot resolve is declared in
+exactly one place:
+
+```
+workspace/compiler/sandbox/Cargo.toml:19
+smolvm = { git = "https://github.com/smol-machines/smolvm", rev = "…" }
+```
+
+Comment it out and workspace resolution succeeds, because nothing
+`nudox-engine` needs reaches `sandbox` — it is an *optional* dependency of
+`index`, and `cargo test -p nudox-engine` never builds it either way.
+
+```bash
+cd ../Backend
+cp workspace/compiler/sandbox/Cargo.toml /tmp/sandbox-Cargo.toml.bak
+sed -i 's|^smolvm = { git = .*|# temporarily disabled to run engine tests|' \
+    workspace/compiler/sandbox/Cargo.toml
+
+cargo test -p nudox-engine        # now resolves
+
+cp /tmp/sandbox-Cargo.toml.bak workspace/compiler/sandbox/Cargo.toml
+git checkout Cargo.lock            # ← do not skip this
+```
+
+**Restore `Cargo.lock` as well as the manifest.** Resolving without `smolvm`
+rewrites the lockfile and drops ~500 lines of its transitive tree; committing
+that would be a much larger and more confusing change than whatever you were
+actually working on. Check `git status` before you commit either way.
+
+This is a workaround for a local credential gap, not a fix: on a machine with
+SSH access to that private repo, none of it is necessary.
+
 One more thing was needed: `nudox-engine`'s default `local-persistence`
 feature gates `ir-vcs`, which uses `libpijul::nudox_f1` — a symbol that exists
 only in the vendored fork supplied by Backend's root `[patch.crates-io]`, and
