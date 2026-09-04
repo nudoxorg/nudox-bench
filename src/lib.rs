@@ -32,6 +32,7 @@ pub mod scenario;
 pub mod text;
 pub mod tokens;
 pub mod truth;
+pub mod verify;
 
 #[cfg(test)]
 pub mod testing;

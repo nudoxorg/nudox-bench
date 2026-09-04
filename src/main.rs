@@ -10,6 +10,7 @@ use nudox_bench::mcp::{McpClient, McpTransport};
 use nudox_bench::runner::{self, RunOptions};
 use nudox_bench::scenario;
 use nudox_bench::tokens::TokenCount;
+use nudox_bench::verify::Stability;
 
 #[derive(Parser)]
 #[command(name = "nbench", about = "Benchmark the Nudox code-intelligence surface")]
@@ -76,6 +77,28 @@ enum Command {
         url: Option<String>,
         #[arg(long, env = "NUDOX_MCP_TOKEN")]
         token: Option<String>,
+    },
+    /// Re-run a config several times and report what did not reproduce.
+    ///
+    /// Every claim this repo makes rests on the scoring being deterministic,
+    /// and nothing else measures that: a single report cannot tell a verdict
+    /// that holds from one that alternates. A verdict that moves is an alarm.
+    /// A cost that moves is ordinary for anything crossing a process or a
+    /// network and is reported as a spread.
+    Verify {
+        #[arg(long, default_value = "configs/default.toml")]
+        config: PathBuf,
+        #[arg(long, default_value = "scenarios")]
+        scenarios: PathBuf,
+        /// Only scenarios whose id contains this substring.
+        #[arg(long)]
+        filter: Option<String>,
+        /// How many times to run. Two is the minimum that can disagree.
+        #[arg(long, default_value_t = 3)]
+        repeat: usize,
+        /// Report a cost as drifting past this fraction of its own floor.
+        #[arg(long, default_value_t = 0.05)]
+        drift: f64,
     },
     /// Load and validate every scenario, then list them.
     List {
@@ -476,6 +499,97 @@ async fn main() -> Result<()> {
                 std::process::exit(1);
             }
             println!("\nall good.");
+        }
+
+        Command::Verify {
+            config,
+            scenarios: scenario_dir,
+            filter,
+            repeat,
+            drift,
+        } => {
+            if repeat < 2 {
+                anyhow::bail!("--repeat must be at least 2: one run cannot disagree with itself");
+            }
+            let config = RunConfig::load(&config)?;
+            let mut scenarios = scenario::load_dir(&scenario_dir)?;
+            if let Some(filter) = &filter {
+                scenarios.retain(|s| s.id.contains(filter.as_str()));
+            }
+            if scenarios.is_empty() {
+                anyhow::bail!("no scenarios matched");
+            }
+            let out = std::env::temp_dir().join("nbench-verify");
+            println!(
+                "config `{}`: {} scenario(s) x {} adapter(s), {repeat} times",
+                config.name,
+                scenarios.len(),
+                config.adapters.len()
+            );
+
+            let mut runs = Vec::new();
+            for pass in 1..=repeat {
+                println!("  run {pass}/{repeat}");
+                let adapters = runner::build_adapters(&config, false, false).await?;
+                let options = RunOptions {
+                    run_id: format!("verify-{pass}"),
+                    out_dir: out.clone(),
+                    keep_responses: false,
+                    judge: false,
+                    ensure_indexed: false,
+                };
+                runs.push(runner::run(&scenarios, adapters, &options).await?);
+            }
+
+            let stability = Stability::compare(&runs);
+            let verdicts = stability.unstable_verdicts();
+            let scores = stability.unstable_scores();
+            let drifting = stability.drifting_costs(drift);
+
+            println!(
+                "\n{} cell(s) over {} runs — {:.0}% reproduced exactly",
+                stability.cells.len(),
+                stability.repeats,
+                stability.reproducibility() * 100.0
+            );
+
+            if verdicts.is_empty() {
+                println!("\nverdicts    every cell agreed on what happened");
+            } else {
+                println!("\nverdicts    {} MOVED — a published pass rate is partly luck", verdicts.len());
+                for cell in &verdicts {
+                    let seen: Vec<&str> = cell.verdicts.iter().map(|v| v.label()).collect();
+                    println!("  {} / {} — {}", cell.scenario, cell.adapter, seen.join(" then "));
+                }
+            }
+
+            if !scores.is_empty() {
+                println!("\nrecall      {} cell(s) kept the verdict but moved the score", scores.len());
+                for cell in &scores {
+                    let seen: Vec<String> =
+                        cell.strict.iter().map(|s| format!("{s}%")).collect();
+                    println!("  {} / {} — strict {}", cell.scenario, cell.adapter, seen.join(" then "));
+                }
+            }
+
+            if drifting.is_empty() {
+                println!("cost        no cell moved more than {:.0}%", drift * 100.0);
+            } else {
+                println!("\ncost        {} cell(s) moved more than {:.0}%", drifting.len(), drift * 100.0);
+                for cell in drifting.iter().take(10) {
+                    let (low, high) = cell.token_span();
+                    println!(
+                        "  {} / {} — {low}..{high} tokens ({:.0}%)",
+                        cell.scenario,
+                        cell.adapter,
+                        cell.token_drift() * 100.0
+                    );
+                }
+            }
+
+            if !verdicts.is_empty() {
+                std::process::exit(1);
+            }
         }
 
         Command::List {
