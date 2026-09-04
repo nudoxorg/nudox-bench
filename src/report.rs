@@ -265,16 +265,21 @@ impl RunReport {
              `matched` counts only facts on a line the adapter actually matched, not \
              ones it printed in the window around a match. Where it falls below \
              `strict`, that much of the recall was surrounded rather than found. It \
-             equals `strict` for adapters that return only what they were asked for.\n\n",
+             equals `strict` for adapters that return only what they were asked for.\n\n\
+             `errored` counts attempts where the tool itself failed — a crash, a \
+             dropped connection, a timeout. They stay inside `attempted` because a \
+             tool that cannot answer did not answer, but they are shown separately: \
+             a column of errors and a column of wrong answers look identical in a \
+             pass rate and mean entirely different things.\n\n",
         );
         out.push_str(
-            "| adapter | pass | attempted | unsup. | unscored | strict | matched | loose | gap | \
+            "| adapter | pass | attempted | unsup. | unscored | errored | strict | matched | loose | gap | \
              distractors | tok/scenario | tok/pass | calls |\n\
-             |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n",
+             |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n",
         );
         for s in &summaries {
             out.push_str(&format!(
-                "| {} | {}/{} ({:.0}%) | {} | {} | {} | {:.2} | {:.2} | {:.2} | {:.2} | {} | {:.0} | {} | {:.1} |\n",
+                "| {} | {}/{} ({:.0}%) | {} | {} | {} | {} | {:.2} | {:.2} | {:.2} | {:.2} | {} | {:.0} | {} | {:.1} |\n",
                 s.adapter,
                 s.passed,
                 s.attempted,
@@ -282,6 +287,7 @@ impl RunReport {
                 s.attempted,
                 s.unsupported,
                 s.unscored,
+                s.errored,
                 s.mean_strict_recall,
                 s.mean_primary_strict_recall,
                 s.mean_loose_recall,
@@ -519,6 +525,33 @@ mod tests {
             summary.mean_strict_recall, 1.0,
             "a structurally-zero recall must not enter the mean"
         );
+    }
+
+    #[test]
+    fn a_tool_that_broke_is_visible_next_to_one_that_was_wrong() {
+        // Both of these are a failed scenario in the pass rate. Only one of
+        // them says anything about the tool's ability to answer, and a report
+        // that cannot tell them apart sends a reader chasing a capability gap
+        // that was really a dropped connection.
+        let mut broke = outcome_for("a", false, false, 100);
+        broke.attempt.error = Some("connection reset".into());
+        let report = RunReport {
+            run_id: "r".into(),
+            timestamp: "t".into(),
+            adapters: vec![AdapterInfo {
+                name: "a".into(),
+                description: String::new(),
+                resident: TokenCount::default(),
+            }],
+            outcomes: vec![outcome_for("a", false, false, 100), broke],
+        };
+        let summary = &report.summarize()[0];
+        assert_eq!(summary.attempted, 2, "a broken attempt still tried");
+        assert_eq!(summary.errored, 1);
+        assert_eq!(summary.passed, 0);
+        // And it has to reach the reader, not just the struct.
+        let rendered = report.to_markdown();
+        assert!(rendered.contains("errored"), "the column is missing from the table");
     }
 
     #[test]
