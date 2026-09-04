@@ -52,6 +52,44 @@ impl Outcome {
     }
 }
 
+/// One adapter's result within one family of question.
+///
+/// # Why the families are not averaged together
+///
+/// The four families ask structurally different things, and a single pass
+/// rate hides which one an adapter is actually good at. A tool that answers
+/// every retrieval question and no polyglot one reports the same headline as
+/// one that is mediocre at both, and the two call for completely different
+/// decisions. The per-scenario table has always carried this, but only a
+/// reader willing to tally ten rows by hand could see it.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct FamilySummary {
+    pub adapter: String,
+    pub family: String,
+    pub attempted: usize,
+    pub passed: usize,
+    pub unsupported: usize,
+    pub unscored: usize,
+    pub mean_strict_recall: f64,
+    pub marginal_tokens: TokenCount,
+}
+
+impl FamilySummary {
+    /// Undefined rather than zero when nothing was attempted: a family an
+    /// adapter never answered has no rate, and printing 0% would read as
+    /// failure at something never tried.
+    pub fn pass_rate(&self) -> Option<f64> {
+        (self.attempted > 0).then(|| self.passed as f64 / self.attempted as f64)
+    }
+
+    pub fn tokens_per_scenario(&self) -> f64 {
+        if self.attempted == 0 {
+            return 0.0;
+        }
+        self.marginal_tokens.conservative() as f64 / self.attempted as f64
+    }
+}
+
 /// What an adapter is, recorded once per run so a report is readable months
 /// later without the config that produced it.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -136,6 +174,39 @@ impl AdapterSummary {
 
 impl RunReport {
     /// Aggregate per adapter, in the order the adapters were declared.
+    /// Per adapter, per family. Same counting rules as [`Self::summarize`]:
+    /// declined and unscored attempts never enter a rate or a mean.
+    pub fn summarize_by_family(&self) -> Vec<FamilySummary> {
+        let mut by_key: BTreeMap<(&str, &str), FamilySummary> = BTreeMap::new();
+        for outcome in &self.outcomes {
+            let key = (outcome.adapter.as_str(), outcome.family.label());
+            let entry = by_key.entry(key).or_insert_with(|| FamilySummary {
+                adapter: outcome.adapter.clone(),
+                family: outcome.family.label().to_owned(),
+                ..Default::default()
+            });
+            if outcome.attempt.unsupported.is_some() {
+                entry.unsupported += 1;
+                continue;
+            }
+            if outcome.passed().is_none() {
+                entry.unscored += 1;
+                continue;
+            }
+            entry.attempted += 1;
+            if outcome.passed() == Some(true) {
+                entry.passed += 1;
+            }
+            entry.mean_strict_recall += outcome.score.strict_recall;
+            entry.marginal_tokens = entry.marginal_tokens + outcome.attempt.cost.marginal();
+        }
+        let mut out: Vec<FamilySummary> = by_key.into_values().collect();
+        for entry in &mut out {
+            entry.mean_strict_recall /= entry.attempted.max(1) as f64;
+        }
+        out
+    }
+
     pub fn summarize(&self) -> Vec<AdapterSummary> {
         let mut by_adapter: BTreeMap<&str, AdapterSummary> = BTreeMap::new();
         for info in &self.adapters {
@@ -305,6 +376,42 @@ impl RunReport {
                     .unwrap_or_else(|| "—".into()),
                 s.mean_tool_calls,
             ));
+        }
+
+        // Per family, so the reader can see which kind of question an
+        // adapter is actually good at without tallying the scenario table by
+        // hand. Only worth printing when there is more than one family.
+        let families = self.summarize_by_family();
+        let distinct: std::collections::BTreeSet<&str> =
+            families.iter().map(|f| f.family.as_str()).collect();
+        if distinct.len() > 1 {
+            out.push_str("\n## By family\n\n");
+            out.push_str(
+                "The four families ask structurally different things. A single pass rate \
+                 hides which one an adapter is good at: answering every retrieval question \
+                 and no polyglot one reports the same headline as being mediocre at both, \
+                 and the two call for different decisions. A family an adapter never \
+                 attempted shows `—`, not 0%.\n\n",
+            );
+            out.push_str(
+                "| adapter | family | pass | unsup. | unscored | strict | tok/scenario |\n\
+                 |---|---|---:|---:|---:|---:|---:|\n",
+            );
+            for f in &families {
+                out.push_str(&format!(
+                    "| {} | {} | {} | {} | {} | {:.2} | {:.0} |\n",
+                    f.adapter,
+                    f.family,
+                    match f.pass_rate() {
+                        Some(rate) => format!("{}/{} ({:.0}%)", f.passed, f.attempted, rate * 100.0),
+                        None => "—".to_owned(),
+                    },
+                    f.unsupported,
+                    f.unscored,
+                    f.mean_strict_recall,
+                    f.tokens_per_scenario(),
+                ));
+            }
         }
 
         out.push_str("\n## Per scenario\n\n");
@@ -552,6 +659,33 @@ mod tests {
         // And it has to reach the reader, not just the struct.
         let rendered = report.to_markdown();
         assert!(rendered.contains("errored"), "the column is missing from the table");
+    }
+
+    #[test]
+    fn a_family_never_attempted_has_no_rate_rather_than_zero() {
+        // 0% would read as failing at something the adapter never tried.
+        let mut declined = outcome_for("a", false, true, 0);
+        declined.family = Family::Polyglot;
+        let report = RunReport {
+            run_id: "r".into(),
+            timestamp: "t".into(),
+            adapters: vec![AdapterInfo {
+                name: "a".into(),
+                description: String::new(),
+                resident: TokenCount::default(),
+            }],
+            outcomes: vec![outcome_for("a", true, false, 100), declined],
+        };
+        let families = report.summarize_by_family();
+        assert_eq!(families.len(), 2, "one row per family the adapter met");
+        let polyglot = families.iter().find(|f| f.family == "polyglot").expect("polyglot row");
+        assert_eq!(polyglot.pass_rate(), None);
+        assert_eq!(polyglot.unsupported, 1);
+        assert_eq!(polyglot.attempted, 0);
+        let retrieval = families.iter().find(|f| f.family == "retrieval").expect("retrieval row");
+        assert_eq!(retrieval.pass_rate(), Some(1.0));
+        // And the table only appears when there is something to compare.
+        assert!(report.to_markdown().contains("## By family"));
     }
 
     #[test]
