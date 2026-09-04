@@ -87,6 +87,26 @@ not the recorded key. I refused to change it unprompted, surfaced it, and only a
 told to push. Backup: `~/.ssh/known_hosts.bak.20260903-201639`.
 **Open:** the fingerprint is still unverified by a human. Restore the backup if it is wrong.
 
-## D13 — Restarting against real canonical · IN PROGRESS
-Re-deriving the ranking question in the new `compiler/ interface/ server/ heart/` layout
-rather than porting a dead diff.
+## D13 — Restarted against real canonical; the benchmark cannot run there · HOLDS
+Checked out `2f82d74b` fresh and traced the search path. On canonical,
+`ApplicationInput::{Search,Graph,Vector}` every one returns **`unavailable`**, and `interface-core`
+depends on no index crate. `server-index-retrieval` has **zero consumers**; `RetrievalResult`
+returns one variant per call, so no code fuses families.
+**Why it matters:** the index plane is built but unwired. nudox-bench cannot execute a single
+question against canonical — not "needs a new adapter", there is no reachable search. Re-measurement
+waits on the plane being connected.
+**Rejected:** porting R1/R2. The comparator they fix does not exist; porting would mean inventing a
+fusion site and then "fixing" it, which measures nothing.
+
+## D14 — Shipped the finding as a law, not a patch · HOLDS
+`analysis/CROSS-FAMILY-RANKING.md` here; a 9-line change to
+`.opencode/skills/build-greenfield-index-plane/SKILL.md` on Backend branch
+`ranking-on-new-index-plane` (one law, one do/don't, one proof gate).
+**Why:** the skill states legacy "can supply counterexamples and candidate product ideas only" —
+which is exactly the standing this evidence has. No cross-family ordering law exists anywhere in the
+skills or plan (verified; every "tier" hit is cache/storage). `Score<Recipe>` protects *within* a
+family; `RankedKey` carries no family, so the legacy category error stays expressible.
+**The proof gate is the load-bearing part:** a two-family test where precedence and score agree is
+satisfied by a comparator that ignores family. Legacy had passing ranking tests the whole time.
+**Honest limit:** the evidence is from the deleted engine. It is a prior about a failure mode, not a
+measurement of the new plane, and the document says so rather than borrowing authority it lacks.
