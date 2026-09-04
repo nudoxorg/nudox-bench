@@ -306,3 +306,22 @@ a benchmark run.**
 panic-capable *code*. Three of the four panics fixed this session were bare slice expressions, which
 no `unwrap` sweep would ever surface. D22's conclusion was right about what it checked and wrong
 about what it implied.
+
+## D26 — The panic sweep, done properly this time · HOLDS
+D25 showed that grepping for `unwrap`/`expect`/`panic!` cannot find a panicking *slice*. So the
+sweep was redone over every `[a..b]` expression outside test code — thirteen of them — and each was
+checked individually rather than counted:
+
+- **`scenario.rs`** (5) — every index comes from `find` on the ASCII `${` or `}`, so the `+1` and
+  `+2` arithmetic lands on a character boundary by construction.
+- **`truth.rs`** (2) — one is the character-wise advance fixed in D16, the other a `find` result.
+- **`ripgrep.rs:383`** — `i` is only used there when `bytes[i]` is `:` or `-`, both ASCII.
+- **`ripgrep.rs:291`, `mcp/client.rs:470`** — both now route through `text::floor_char_boundary`.
+- **`judge.rs`** (2) — guarded by the `end + 1 > start` arm added in D25.
+- **`report.rs:490`** — a full-range slice pattern, which cannot fail.
+
+Byte indexing was checked with it: `bytes[start - 1]` is guarded by `start == 0 ||`, `bytes[end]` by
+`end >= bytes.len() ||`, and `bytes[j]` by `j < bytes.len()`.
+
+**Four panics were fixed this session and three of them were slices.** The lesson is not "audit
+harder"; it is that the shape of the search has to match the shape of the defect.
