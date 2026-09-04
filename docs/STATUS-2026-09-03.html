@@ -91,9 +91,9 @@
   connected to anything.</p>
   <div class="meta">
     <span><b>date</b> 2026-09-03</span>
-    <span><b>nudox-bench</b> 3f69190</span>
+    <span><b>nudox-bench</b> 3697fc1</span>
     <span><b>Backend canonical</b> 2f82d74b</span>
-    <span><b>scenarios</b> 14</span>
+    <span><b>scenarios</b> 15</span>
     <span><b>tests</b> 80</span>
   </div>
 </div>
@@ -126,13 +126,13 @@ is simply not wired to the application service yet. No flag turns it on.</p>
 
 <h2>The readout</h2>
 
-<p>Fourteen scenarios, two adapters. Read the middle columns, not the first.</p>
+<p>Fifteen scenarios, two adapters. Read the middle columns, not the first.</p>
 
 <div class="tablewrap"><table>
   <thead><tr><th>adapter</th><th>pass</th><th>attempted</th><th>unsup.</th><th>unscored</th><th>errored</th><th>strict</th><th>matched</th><th>tok/scenario</th></tr></thead>
   <tbody>
-    <tr><td>nudox-canonical</td><td class="n dim">0/0</td><td class="n">0</td><td class="n bad">14</td><td class="n">0</td><td class="n">0</td><td class="n dim">—</td><td class="n dim">—</td><td class="n dim">—</td></tr>
-    <tr><td>ripgrep</td><td class="n good">7/10 · 70%</td><td class="n">10</td><td class="n">2</td><td class="n">2</td><td class="n">0</td><td class="n">0.97</td><td class="n">0.63</td><td class="n">10,314</td></tr>
+    <tr><td>nudox-canonical</td><td class="n dim">0/0</td><td class="n">0</td><td class="n bad">15</td><td class="n">0</td><td class="n">0</td><td class="n dim">—</td><td class="n dim">—</td><td class="n dim">—</td></tr>
+    <tr><td>ripgrep</td><td class="n good">8/11 · 73%</td><td class="n">11</td><td class="n">2</td><td class="n">2</td><td class="n">0</td><td class="n">0.97</td><td class="n">0.58</td><td class="n">9,452</td></tr>
   </tbody>
 </table></div>
 
@@ -149,8 +149,8 @@ false.</p>
   <thead><tr><th>family</th><th>ripgrep</th><th>strict</th><th>tok/scenario</th></tr></thead>
   <tbody>
     <tr><td>efficiency</td><td class="n good">1/1 · 100%</td><td class="n">1.00</td><td class="n">664</td></tr>
-    <tr><td>polyglot</td><td class="n">3/4 · 75%</td><td class="n">1.00</td><td class="n">4,119</td></tr>
-    <tr><td>retrieval</td><td class="n">3/5 · 60%</td><td class="n">0.93</td><td class="n">17,200</td></tr>
+    <tr><td>polyglot</td><td class="n">3/4 · 75%</td><td class="n">1.00</td><td class="n">4,118</td></tr>
+    <tr><td>retrieval</td><td class="n">4/6 · 67%</td><td class="n">0.94</td><td class="n">14,472</td></tr>
     <tr><td>implementation</td><td class="n dim">— <span class="dim">(2 unscored)</span></td><td class="n dim">—</td><td class="n dim">—</td></tr>
   </tbody>
 </table></div>
@@ -175,7 +175,8 @@ happened to land on.</p>
     <tr><td>baselines (ripgrep + rust-analyzer)</td><td class="n">3</td><td class="n">20</td><td class="n good">100%</td></tr>
     <tr><td>canonical, after two new scenarios</td><td class="n">3</td><td class="n">24</td><td class="n good">100%</td></tr>
     <tr><td>canonical, all 14 scenarios</td><td class="n">3</td><td class="n">28</td><td class="n good">100%</td></tr>
-    <tr><td><strong>total</strong></td><td class="n"><strong>12</strong></td><td class="n"><strong>92</strong></td><td class="n good"><strong>100%</strong></td></tr>
+    <tr><td>canonical, all 15 scenarios</td><td class="n">3</td><td class="n">30</td><td class="n good">100%</td></tr>
+    <tr><td><strong>total</strong></td><td class="n"><strong>15</strong></td><td class="n"><strong>122</strong></td><td class="n good"><strong>100%</strong></td></tr>
   </tbody>
 </table></div>
 
@@ -203,6 +204,12 @@ a <em>failure</em> to reproduce — the verdict survived on where the threshold 
     <tr><td>View migration no-op</td><td class="wrap-cell">Database views were rebuilt only when a <em>column</em> changed, so a changed view definition never propagated.</td></tr>
   </tbody>
 </table></div>
+
+<p>After the panic fixes, the whole crate was swept for panic-capable calls outside test code.
+Four remain and each was checked rather than waved through — two on bundled tokenizer data, one
+provable from both branches of its own function, one whose call sites all sit inside the matching
+transport arm. The largest adapter has no <code>unwrap</code> or <code>expect</code> in non-test
+code at all.</p>
 
 <h3>What the new column found in old data</h3>
 
@@ -245,7 +252,7 @@ kept passing ranking tests the entire time it was broken.</p>
 </ul>
 
 <div class="foot">
-  nudox-bench · every figure here is reproducible from the repository at <code>3f69190</code>
+  nudox-bench · every figure here is reproducible from the repository at <code>3697fc1</code>
   · reasoning and retractions are logged in <code>analysis/DECISIONS.md</code>
 </div>
 
