@@ -248,3 +248,22 @@ After fixing the three byte-offset panics, swept the whole crate for panic-capab
   inside `Transport::Http { .. }` match arms, so it genuinely cannot be reached.
 
 `nudox.rs`, the largest adapter, has **no** `unwrap`/`expect` in non-test code at all.
+
+## D23 — A scenario that never ran, and the skew it exposed · HOLDS
+`ts/commander/public-surface` had **declined for this repository's entire history** because
+`$NODE_MODULES` was unset — while commander 12.1.0 sat on this machine the whole time, in
+`context-bench/node_modules`. Pointed at it, the scenario passes in 956 tokens, taking polyglot to
+4/5 and the overall figure to 9/12 at 8,780 tokens per scenario.
+
+**The sharper problem it exposed.** This machine also holds commander **8.1.0** under
+`~/.npm/_npx/`. Nothing checked which version a resolved root actually contained, so pointing the
+variable at the wrong copy would produce a complete run, real-looking numbers, and a comparison
+against code the truth was never written against — silently. `doctor` now reads the version present
+(npm from `package.json`, cargo and Go from the directory name) and reports `SKEW` with a non-zero
+exit. Verified both ways against the two real commander copies.
+
+Python roots report no version rather than a guess: it lives in a sibling `.dist-info`, and
+inventing one would flag skew that is not there. `None` beats a confident wrong answer here.
+
+**Reproducibility after all of this:** 30 cells, 3 runs, 100% — this time with commander genuinely
+scoring rather than declining. Running total **152 cells over 18 runs, nothing moved.**

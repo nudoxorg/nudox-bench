@@ -114,6 +114,23 @@ export NODE_MODULES=/path/to/some/node_modules
 An unset variable survives into the path verbatim, so `doctor` prints
 `MISSING ${NODE_MODULES}/commander` rather than a confusing `/commander`.
 
+**Point it at the right version.** `doctor` reads the version actually present
+at each root and compares it with what the scenarios describe:
+
+```
+ok      …/memchr-2.8.3 (2.8.3)
+SKEW    …/node_modules/commander
+        holds 8.1.0, but scenarios describe 12.1.0.
+```
+
+This is not hypothetical. A machine that has ever run `npx` is likely to hold
+several copies of a package at different versions, and the wrong one produces a
+complete run, real-looking numbers, and a comparison against code the truth was
+never written against — with nothing else anywhere reporting a problem. The npm
+version is read from `package.json`; cargo and Go spell it into the directory
+name. Python roots report `ok` with no version rather than a guess, because it
+lives in a sibling `.dist-info`.
+
 To fetch what is missing:
 
 ```bash
