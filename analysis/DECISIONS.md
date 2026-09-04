@@ -325,3 +325,20 @@ Byte indexing was checked with it: `bytes[start - 1]` is guarded by `start == 0 
 
 **Four panics were fixed this session and three of them were slices.** The lesson is not "audit
 harder"; it is that the shape of the search has to match the shape of the defect.
+
+## D27 — The shipped scripts could not be asked what they do · INVALID (fixed)
+`plot_results.py --help` produced a `FileNotFoundError` traceback: it read `sys.argv[1]` as a run
+directory, so the flag became a path. `audit_payloads.py --help` was worse — it ignored the flag and
+audited anyway.
+
+`audit_payloads.py` also had its report path **hardcoded** to `results/2026-08-30/report.json`, so
+the payload-provenance audit could only ever examine the first published run, which is now several
+behind. It now takes a run directory or a report, defaulting to that one.
+
+Both were found by simply running `--help` on everything shipped, which is a check worth doing on
+any repository that ships scripts, and which no amount of reading the source suggests.
+
+**What it immediately produced:** the first provenance audit of a current run.
+`go/uuid/exported-types` returns 38 matched lines and 0 context lines — entirely primary evidence,
+which is the independent confirmation that the Go export pattern added in D20 matches declarations
+rather than dragging them in through a window.

@@ -354,9 +354,18 @@ def chart_ablations(rows, out):
 
 
 def main():
-    if len(sys.argv) < 2:
-        sys.exit(__doc__)
+    # No argparse here on purpose — the whole interface is two positional
+    # paths — but `--help` must still answer rather than be taken for a run
+    # directory. It used to be, and produced a FileNotFoundError traceback.
+    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
+        print(__doc__)
+        print("usage: plot_results.py <run-dir> [out-dir]")
+        print("       out-dir defaults to <run-dir>/charts")
+        sys.exit(0 if len(sys.argv) > 1 else 2)
     run_dir = Path(sys.argv[1])
+    if not (run_dir / "report.json").is_file():
+        sys.exit(f"no report.json in {run_dir} — pass a run directory, "
+                 f"e.g. runs/run-2026-09-03-233653")
     out_dir = Path(sys.argv[2]) if len(sys.argv) > 2 else run_dir / "charts"
     out_dir.mkdir(parents=True, exist_ok=True)
 

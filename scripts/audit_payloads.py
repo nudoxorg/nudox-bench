@@ -22,7 +22,10 @@ except ModuleNotFoundError:
     import tomli as tomllib
 
 REPO = Path(__file__).resolve().parent.parent
-REPORT = REPO / "results/2026-08-30/report.json"
+# The run audited when none is named. It is the first published one, kept as
+# the default because the artifacts it contains are the ones the written
+# results discuss — but any run can be audited by naming it.
+DEFAULT_REPORT = REPO / "results/2026-08-30/report.json"
 
 EXT = r"(?:go|rs|py|ts|tsx|js|mjs|cjs|toml|md|txt|json|cfg|ini)"
 LINE_RE = re.compile(r"^(?P<path>\S*?\.%s)(?P<sep>[:-])(?P<line>\d+)[:-]" % EXT)
@@ -77,9 +80,33 @@ def is_test(line):
             or "test_" in low.rsplit("/", 1)[-1] or ".test." in low)
 
 
+def resolve_report(argv):
+    """The report to audit: a run directory, a report.json, or the default.
+
+    The path used to be hardcoded, so this script could only ever audit one
+    run — and that run is now several behind. `--help` was swallowed too, and
+    silently audited the default instead of answering.
+    """
+    args = [a for a in argv[1:] if a not in ("-h", "--help")]
+    if len(args) != len(argv[1:]):
+        print(__doc__)
+        print("usage: audit_payloads.py [run-dir | report.json]")
+        print("       defaults to %s" % DEFAULT_REPORT.relative_to(REPO))
+        sys.exit(0)
+    if not args:
+        return DEFAULT_REPORT
+    path = Path(args[0])
+    if path.is_dir():
+        path = path / "report.json"
+    if not path.is_file():
+        sys.exit("no report at %s" % path)
+    return path
+
+
 def main():
     scen = load_scenarios()
-    rep = json.loads(REPORT.read_text())
+    report_path = resolve_report(sys.argv)
+    rep = json.loads(report_path.read_text())
 
     print("# Payload audit — %s\n" % rep["run_id"])
     artifacts = []
