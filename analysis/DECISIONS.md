@@ -123,3 +123,32 @@ ripgrep 5/6 (83%). Recorded as **unsupported, never a zero score**; the harness 
 average "cannot be asked" with "answered wrongly", and this is the case that vocabulary was for.
 **Why ship an adapter that returns nothing:** it needs no change when the plane is wired, and the
 ripgrep column is a same-day baseline for that comparison to be read against.
+
+## D16 — Fixed three panics, and made tool errors visible · HOLDS
+**Panics.** Every size limit here is a byte count applied to source text, which is full of
+multi-byte characters. Three sites cut at a raw byte offset — `truth::contains_word` advancing one
+byte after a non-word-bounded hit, the ripgrep adapter slicing *and* truncating at
+`MAX_OUTPUT_BYTES`, and `mcp::truncate` — and all three panic mid-run when the cut splits a
+character. Each was verified as an actual panic against the real code path before being fixed, not
+argued from reading. `text::floor_char_boundary` is `str`'s own unstable method, spelled out.
+
+**Errors.** `summarize()` had counted `errored` from the start and no table ever rendered it, so an
+adapter whose endpoint dropped was indistinguishable from one that answered wrongly: same pass rate,
+same recall. That is precisely the conflation the `unsupported` and `unscored` columns exist to
+prevent, leaking back through the one case nobody displayed. Added the column, and an `error` column
+to the results DB.
+
+**What it found immediately:** `run-2026-08-30-141350` recorded four rust-analyzer outcomes as
+`passed=0, strict=0.00` when the tool had failed at `LSP initialize` — it never started, and the run
+reported it as answering wrongly. **Checked, and it is not one of the six published runs**, so no
+published claim rests on it. Verified rather than assumed.
+
+## D17 — `nbench verify` and a DB stability view · HOLDS
+`verify` re-runs a config N times; a moved verdict exits non-zero, a moved cost is reported as a
+spread relative to its own floor. Recall that moves while the verdict holds counts as a failure to
+reproduce — the verdict survived on where the threshold sat.
+`bench_db.py stability` answers the same question retroactively over runs already recorded, but
+**always exits 0 and refuses to say why anything moved**: across repeats of one build it is
+flakiness, across a code change it is a changelog, and the query cannot tell. The default set is the
+last three runs, which usually spans changes, so asserting "flaky" would be wrong most of the time.
+**First measurement:** `configs/canonical.toml`, 3 runs, 20 cells, 100% reproduced.

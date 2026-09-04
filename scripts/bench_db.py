@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS outcomes (
     any_of_ok     INTEGER,
     judged        INTEGER,
     unsupported   TEXT,           -- the decline reason, verbatim
+    error         TEXT,           -- the tool's own failure, verbatim
     tool_calls    INTEGER,
     elapsed_ms    INTEGER,
     req_cl100k    INTEGER,
@@ -156,6 +157,10 @@ ADDED_COLUMNS = {
     "outcomes": [
         ("matched", "REAL"),
         ("answer_distr", "INTEGER"),
+        # The tool broke rather than answered. Stored verbatim because
+        # "connection reset" and "no such file" send a reader to entirely
+        # different places, and a boolean would send them to neither.
+        ("error", "TEXT"),
     ],
 }
 
@@ -264,9 +269,9 @@ def ingest_report(conn: sqlite3.Connection, path: Path) -> tuple[str, int]:
             cur = conn.execute(
                 "INSERT INTO outcomes (run_id, scenario_id, family, adapter, passed,"
                 " strict, loose, matched, gap, distractors, answer_distr, any_of_ok,"
-                " judged, unsupported, tool_calls, elapsed_ms, req_cl100k, resp_cl100k,"
-                " req_o200k, resp_o200k, marginal, context_chars)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " judged, unsupported, error, tool_calls, elapsed_ms, req_cl100k,"
+                " resp_cl100k, req_o200k, resp_o200k, marginal, context_chars)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     run_id,
                     outcome["scenario_id"],
@@ -282,6 +287,7 @@ def ingest_report(conn: sqlite3.Connection, path: Path) -> tuple[str, int]:
                     1 if score.get("any_of_satisfied") else 0,
                     1 if score.get("judged") else 0,
                     unsupported,
+                    attempt.get("error"),
                     attempt.get("tool_calls"),
                     attempt.get("elapsed_ms"),
                     _tok(cost, "requests", "cl100k"),
