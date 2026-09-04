@@ -1,0 +1,250 @@
+<title>Canonical Readout</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+  :root{
+    --paper:#f7f8fa; --panel:#ffffff; --ink:#14181f; --ink-2:#4a525e; --ink-3:#767f8d;
+    --rule:#d8dde5; --rule-soft:#e7ebf1; --accent:#1c4f8f; --accent-soft:#e8eef7;
+    --ok:#1f6b4a; --ok-bg:#e6f2ec; --warn:#8a5a12; --warn-bg:#f7efe1; --stop:#96301f; --stop-bg:#f8e9e6;
+    --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
+    --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --paper:#101319; --panel:#161b23; --ink:#e6eaf1; --ink-2:#a7b0be; --ink-3:#7b8493;
+      --rule:#2a323d; --rule-soft:#222933; --accent:#7fa9e0; --accent-soft:#1a2536;
+      --ok:#6fc79b; --ok-bg:#152a20; --warn:#d8a75a; --warn-bg:#2c2416; --stop:#e59183; --stop-bg:#2e1b18;
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#101319; --panel:#161b23; --ink:#e6eaf1; --ink-2:#a7b0be; --ink-3:#7b8493;
+    --rule:#2a323d; --rule-soft:#222933; --accent:#7fa9e0; --accent-soft:#1a2536;
+    --ok:#6fc79b; --ok-bg:#152a20; --warn:#d8a75a; --warn-bg:#2c2416; --stop:#e59183; --stop-bg:#2e1b18;
+  }
+
+  body{background:var(--paper);color:var(--ink);font-family:var(--serif);
+       font-size:17px;line-height:1.65;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:78ch;margin:0 auto;padding:4rem 1.5rem 6rem;}
+  @media(max-width:640px){ .wrap{padding:2.5rem 1.1rem 4rem;} body{font-size:16px;} }
+
+  /* masthead */
+  .mast{border-top:3px solid var(--ink);padding-top:1.1rem;margin-bottom:3.2rem;}
+  h1{font-family:var(--sans);font-weight:600;font-size:2.1rem;line-height:1.15;
+     letter-spacing:-.02em;margin:0 0 .5rem;text-wrap:balance;}
+  .standfirst{color:var(--ink-2);font-size:1.12rem;margin:0 0 1.5rem;max-width:62ch;}
+  .meta{display:flex;flex-wrap:wrap;gap:.35rem 1.6rem;font-family:var(--mono);
+        font-size:.76rem;color:var(--ink-3);border-top:1px solid var(--rule-soft);padding-top:.8rem;}
+  .meta b{font-weight:500;color:var(--ink-2);}
+
+  h2{font-family:var(--sans);font-weight:600;font-size:1.32rem;letter-spacing:-.01em;
+     margin:3.4rem 0 .2rem;text-wrap:balance;}
+  h2:first-of-type{margin-top:0;}
+  h3{font-family:var(--sans);font-weight:600;font-size:1rem;margin:2rem 0 .4rem;}
+  p{margin:.85rem 0;}
+  .lede{color:var(--ink-2);}
+  a{color:var(--accent);}
+
+  /* state chips — these encode an actual state, not decoration */
+  .chip{display:inline-block;font-family:var(--sans);font-size:.68rem;font-weight:600;
+        letter-spacing:.09em;text-transform:uppercase;padding:.2rem .5rem;border-radius:3px;
+        vertical-align:.22em;margin-left:.55rem;}
+  .chip.stop{background:var(--stop-bg);color:var(--stop);}
+  .chip.ok{background:var(--ok-bg);color:var(--ok);}
+  .chip.warn{background:var(--warn-bg);color:var(--warn);}
+
+  code,.num{font-family:var(--mono);font-size:.88em;}
+  code{background:var(--accent-soft);padding:.1em .34em;border-radius:3px;color:var(--ink);}
+
+  /* anything measured is mono; anything argued is serif */
+  .tablewrap{overflow-x:auto;margin:1.4rem 0;border:1px solid var(--rule);
+             border-radius:4px;background:var(--panel);}
+  table{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:.8rem;}
+  th{text-align:left;font-family:var(--sans);font-weight:600;font-size:.72rem;
+     letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2);
+     padding:.7rem .85rem;border-bottom:1px solid var(--rule);white-space:nowrap;}
+  td{padding:.6rem .85rem;border-bottom:1px solid var(--rule-soft);white-space:nowrap;}
+  tr:last-child td{border-bottom:0;}
+  td.n{text-align:right;font-variant-numeric:tabular-nums;}
+  td.wrap-cell{white-space:normal;font-family:var(--serif);font-size:.95rem;min-width:22ch;}
+  .dim{color:var(--ink-3);}
+  .good{color:var(--ok);} .bad{color:var(--stop);}
+
+  pre{background:var(--panel);border:1px solid var(--rule);border-left:3px solid var(--accent);
+      border-radius:4px;padding:.9rem 1rem;overflow-x:auto;font-family:var(--mono);
+      font-size:.78rem;line-height:1.55;margin:1.3rem 0;}
+  pre code{background:none;padding:0;font-size:inherit;}
+
+  blockquote{margin:1.4rem 0;padding:.1rem 0 .1rem 1.1rem;border-left:2px solid var(--accent);
+             color:var(--ink-2);font-style:italic;}
+  ul{padding-left:1.15rem;margin:.85rem 0;} li{margin:.4rem 0;}
+  hr{border:0;border-top:1px solid var(--rule);margin:3.2rem 0;}
+  .foot{margin-top:3.5rem;padding-top:1.2rem;border-top:1px solid var(--rule);
+        font-family:var(--sans);font-size:.82rem;color:var(--ink-3);}
+</style>
+
+<div class="wrap">
+
+<div class="mast">
+  <h1>Where the benchmark stands against canonical</h1>
+  <p class="standfirst">The harness works, reproduces exactly, and cannot currently measure Nudox
+  at all — because on <code>canonical</code> the retrieval surface it was built to measure is not
+  connected to anything.</p>
+  <div class="meta">
+    <span><b>date</b> 2026-09-03</span>
+    <span><b>nudox-bench</b> 83ba190</span>
+    <span><b>Backend canonical</b> 2f82d74b</span>
+    <span><b>scenarios</b> 12</span>
+    <span><b>tests</b> 80</span>
+  </div>
+</div>
+
+<h2>The finding<span class="chip stop">blocked</span></h2>
+
+<p>Every retrieval action on canonical answers the same way:</p>
+
+<pre><code>$ interface-cli search 5 primary memchr3 4
+{"correlation":5,
+ "body":{"kind":"dependency_unavailable","capability":"index"},
+ "terminal":{"kind":"degraded","emitted":0}}</code></pre>
+
+<p>Its own health roll-call agrees — <code>index</code>, <code>graph</code> and
+<code>vector</code> all report <span class="bad">unavailable</span>. This is not a setting. Three
+facts, each checked against <code>2f82d74b</code>:</p>
+
+<div class="tablewrap"><table>
+  <thead><tr><th>check</th><th>result</th></tr></thead>
+  <tbody>
+    <tr><td>ApplicationService type parameters</td><td class="wrap-cell">Generic over <em>only</em> a compiler (<code>Compiler = UnavailableCompiler</code>). There is no slot an index could occupy.</td></tr>
+    <tr><td>interface-core dependencies</td><td class="wrap-cell">Declares no <code>server-index-*</code> crate. The built binary links none of them.</td></tr>
+    <tr><td>server-index-retrieval consumers</td><td class="wrap-cell">Zero. <code>RetrievalResult</code> returns one variant per call, so nothing fuses families.</td></tr>
+  </tbody>
+</table></div>
+
+<p>The index plane under <code>server/index/*</code> is real and carefully built — separate
+<code>exact</code>, <code>lexical</code>, <code>qdrant</code> and <code>trustfall</code> routes. It
+is simply not wired to the application service yet. No flag turns it on.</p>
+
+<h2>The readout</h2>
+
+<p>Twelve scenarios, two adapters. Read the middle columns, not the first.</p>
+
+<div class="tablewrap"><table>
+  <thead><tr><th>adapter</th><th>pass</th><th>attempted</th><th>unsup.</th><th>unscored</th><th>errored</th><th>strict</th><th>matched</th><th>tok/scenario</th></tr></thead>
+  <tbody>
+    <tr><td>nudox-canonical</td><td class="n dim">0/0</td><td class="n">0</td><td class="n bad">12</td><td class="n">0</td><td class="n">0</td><td class="n dim">—</td><td class="n dim">—</td><td class="n dim">—</td></tr>
+    <tr><td>ripgrep</td><td class="n good">6/8 · 75%</td><td class="n">8</td><td class="n">2</td><td class="n">2</td><td class="n">0</td><td class="n">0.96</td><td class="n">0.62</td><td class="n">8,100</td></tr>
+  </tbody>
+</table></div>
+
+<p><code>0/0</code> is not a score of zero. Every scenario came back <strong>unsupported</strong> —
+the adapter could not ask the question at all — and the harness keeps that permanently separate
+from a wrong answer. Averaging the two would publish “Nudox 0%”, which would be both damning and
+false.</p>
+
+<h3>By family</h3>
+
+<p>One pass rate hides which kind of question a tool is good at.</p>
+
+<div class="tablewrap"><table>
+  <thead><tr><th>family</th><th>ripgrep</th><th>strict</th><th>tok/scenario</th></tr></thead>
+  <tbody>
+    <tr><td>efficiency</td><td class="n good">1/1 · 100%</td><td class="n">1.00</td><td class="n">664</td></tr>
+    <tr><td>polyglot</td><td class="n">3/4 · 75%</td><td class="n">1.00</td><td class="n">4,119</td></tr>
+    <tr><td>retrieval</td><td class="n">2/3 · 67%</td><td class="n">0.89</td><td class="n">15,888</td></tr>
+    <tr><td>implementation</td><td class="n dim">— <span class="dim">(2 unscored)</span></td><td class="n dim">—</td><td class="n dim">—</td></tr>
+  </tbody>
+</table></div>
+
+<p>Note the polyglot row: <strong>strict recall 1.00 and still only 3 of 4 passing.</strong> The
+single failure is purely precision — ripgrep answers a “what does this package export” question by
+printing the whole module, scoring full recall while tripping every distractor. That is the
+clearest demonstration in the repo of why recall alone is not a result.</p>
+
+<h2>Does any of this reproduce?<span class="chip ok">verified</span></h2>
+
+<p>Every claim the benchmark makes rests on one sentence: the scoring is deterministic, so anyone
+can re-run these and get the same numbers. Until this week nothing measured that. A single report
+cannot tell a verdict that holds from one that alternates — it shows whichever value that run
+happened to land on.</p>
+
+<div class="tablewrap"><table>
+  <thead><tr><th>config</th><th>runs</th><th>cells</th><th>reproduced</th></tr></thead>
+  <tbody>
+    <tr><td>canonical (ripgrep + nudox-canonical)</td><td class="n">3</td><td class="n">20</td><td class="n good">100%</td></tr>
+    <tr><td>baselines (ripgrep + rust-analyzer)</td><td class="n">3</td><td class="n">20</td><td class="n good">100%</td></tr>
+    <tr><td>canonical, after two new scenarios</td><td class="n">3</td><td class="n">24</td><td class="n good">100%</td></tr>
+    <tr><td><strong>total</strong></td><td class="n"><strong>9</strong></td><td class="n"><strong>64</strong></td><td class="n good"><strong>100%</strong></td></tr>
+  </tbody>
+</table></div>
+
+<p>The middle row is the one worth having. rust-analyzer is a stateful LSP server, restarted and
+re-indexed for every run — precisely where a benchmark would be expected to wobble — and no verdict
+moved, with no cost drifting more than 5%.</p>
+
+<p>Two kinds of movement are measured but never merged. A <strong>verdict</strong> that changes is
+an alarm: a published pass rate is then partly luck, and averaging does not repair it. A
+<strong>cost</strong> that changes is ordinary for anything crossing a process or a network, and is
+reported as a spread relative to its own floor. Recall that moves while the verdict holds counts as
+a <em>failure</em> to reproduce — the verdict survived on where the threshold happened to sit.</p>
+
+<h2>Defects found and fixed</h2>
+
+<p>All verified as real against the actual code path before being fixed, not argued from reading.</p>
+
+<div class="tablewrap"><table>
+  <thead><tr><th>defect</th><th>consequence</th></tr></thead>
+  <tbody>
+    <tr><td>Three byte-offset cuts</td><td class="wrap-cell">Every size limit is a byte count applied to source text, which is full of multi-byte characters. <code>contains_word</code>, the ripgrep adapter (twice in one expression) and <code>mcp::truncate</code> all <strong>panicked</strong> when a cut split a character — taking down a whole run.</td></tr>
+    <tr><td><code>errored</code> never displayed</td><td class="wrap-cell">Counted since the beginning, rendered nowhere. An adapter whose endpoint dropped looked identical to one answering wrongly — the exact conflation the <code>unsupported</code> and <code>unscored</code> columns exist to prevent.</td></tr>
+    <tr><td>Language-blind overview search</td><td class="wrap-cell">ripgrep grepped <code>pub |export |public </code> for “what does this package export”. Python has no export keyword, so it matched <em>nothing</em>: 146 tokens, 0.00 recall — a zero for a question never actually asked.</td></tr>
+    <tr><td>Canonical adapter scored 0%</td><td class="wrap-cell">A bug introduced with the adapter itself. An unusable binary reached scoring and read as <code>fail 0%</code> rather than declining.</td></tr>
+    <tr><td>View migration no-op</td><td class="wrap-cell">Database views were rebuilt only when a <em>column</em> changed, so a changed view definition never propagated.</td></tr>
+  </tbody>
+</table></div>
+
+<h3>What the new column found in old data</h3>
+
+<p>Migrating the results database surfaced four outcomes that had been invisible: in
+<code>run-2026-08-30-141350</code>, rust-analyzer failed at <code>LSP initialize</code> on every
+memchr scenario and each was recorded as a scored failure. <strong>The tool never started, and the
+run reported that it answered wrongly.</strong></p>
+
+<p>That run is not one of the six under <code>results/</code>, so no published claim rests on it.
+Checked rather than assumed.</p>
+
+<h2>The ranking finding, carried forward</h2>
+
+<p>The earlier work on the deleted <code>nudox-engine</code> found a real defect: an exact name
+match on a <code>pub(crate)</code> symbol scored <code>1.0 × 0.6 = 0.60</code>, a public semantic
+row scored <code>(cos + 1) / 2</code>, and the merge sorted on <strong>score alone</strong> — so
+any public symbol with <code>cos &gt; 0.2</code> outranked a literal name match. It could not win.</p>
+
+<p>That patch is dead; the crate no longer exists. The finding is not, because the defect was never
+the weights — it was that two families’ scores were made comparable at all. It now sits in the
+greenfield plan as a law:</p>
+
+<blockquote>Results of different families are never ordered by a shared scalar. A query that
+touches more than one family declares a family precedence and orders within each family only.</blockquote>
+
+<p>The load-bearing half is the proof gate that came with it: <em>a two-family test where
+precedence and score agree is satisfied by a comparator that ignores family.</em> The legacy engine
+kept passing ranking tests the entire time it was broken.</p>
+
+<h2>What would change this page</h2>
+
+<ul>
+  <li><strong>Wiring the index plane to <code>interface-core</code>.</strong> The adapter needs no
+  change — it returns real attempts the moment <code>index</code> reports ready, and the ripgrep
+  column above is a same-day baseline for that comparison to be read against.</li>
+  <li><strong>A token with <code>workflow</code> scope</strong>, so the CI definition can be pushed
+  and <code>verify</code> can gate on reproducibility rather than being run by hand.</li>
+  <li><strong>Confirming the SSH host key</strong> for the Backend remote, which changed and was
+  accepted under instruction but is still unverified by a person.</li>
+</ul>
+
+<div class="foot">
+  nudox-bench · every figure here is reproducible from the repository at <code>83ba190</code>
+  · reasoning and retractions are logged in <code>analysis/DECISIONS.md</code>
+</div>
+
+</div>
