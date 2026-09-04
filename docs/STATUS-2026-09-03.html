@@ -91,9 +91,9 @@
   connected to anything.</p>
   <div class="meta">
     <span><b>date</b> 2026-09-03</span>
-    <span><b>nudox-bench</b> 83ba190</span>
+    <span><b>nudox-bench</b> 3f69190</span>
     <span><b>Backend canonical</b> 2f82d74b</span>
-    <span><b>scenarios</b> 12</span>
+    <span><b>scenarios</b> 14</span>
     <span><b>tests</b> 80</span>
   </div>
 </div>
@@ -126,13 +126,13 @@ is simply not wired to the application service yet. No flag turns it on.</p>
 
 <h2>The readout</h2>
 
-<p>Twelve scenarios, two adapters. Read the middle columns, not the first.</p>
+<p>Fourteen scenarios, two adapters. Read the middle columns, not the first.</p>
 
 <div class="tablewrap"><table>
   <thead><tr><th>adapter</th><th>pass</th><th>attempted</th><th>unsup.</th><th>unscored</th><th>errored</th><th>strict</th><th>matched</th><th>tok/scenario</th></tr></thead>
   <tbody>
-    <tr><td>nudox-canonical</td><td class="n dim">0/0</td><td class="n">0</td><td class="n bad">12</td><td class="n">0</td><td class="n">0</td><td class="n dim">—</td><td class="n dim">—</td><td class="n dim">—</td></tr>
-    <tr><td>ripgrep</td><td class="n good">6/8 · 75%</td><td class="n">8</td><td class="n">2</td><td class="n">2</td><td class="n">0</td><td class="n">0.96</td><td class="n">0.62</td><td class="n">8,100</td></tr>
+    <tr><td>nudox-canonical</td><td class="n dim">0/0</td><td class="n">0</td><td class="n bad">14</td><td class="n">0</td><td class="n">0</td><td class="n dim">—</td><td class="n dim">—</td><td class="n dim">—</td></tr>
+    <tr><td>ripgrep</td><td class="n good">7/10 · 70%</td><td class="n">10</td><td class="n">2</td><td class="n">2</td><td class="n">0</td><td class="n">0.97</td><td class="n">0.63</td><td class="n">10,314</td></tr>
   </tbody>
 </table></div>
 
@@ -150,15 +150,16 @@ false.</p>
   <tbody>
     <tr><td>efficiency</td><td class="n good">1/1 · 100%</td><td class="n">1.00</td><td class="n">664</td></tr>
     <tr><td>polyglot</td><td class="n">3/4 · 75%</td><td class="n">1.00</td><td class="n">4,119</td></tr>
-    <tr><td>retrieval</td><td class="n">2/3 · 67%</td><td class="n">0.89</td><td class="n">15,888</td></tr>
+    <tr><td>retrieval</td><td class="n">3/5 · 60%</td><td class="n">0.93</td><td class="n">17,200</td></tr>
     <tr><td>implementation</td><td class="n dim">— <span class="dim">(2 unscored)</span></td><td class="n dim">—</td><td class="n dim">—</td></tr>
   </tbody>
 </table></div>
 
-<p>Note the polyglot row: <strong>strict recall 1.00 and still only 3 of 4 passing.</strong> The
-single failure is purely precision — ripgrep answers a “what does this package export” question by
-printing the whole module, scoring full recall while tripping every distractor. That is the
-clearest demonstration in the repo of why recall alone is not a result.</p>
+<p>Look at strict recall against the pass rate. It sits at 0.97 overall and 1.00 in polyglot,
+while the pass rate is 70%. <strong>Every remaining failure is precision or cost, not finding.</strong>
+ripgrep answers “what does this package export” by printing the whole module — full recall, every
+distractor tripped — and answers a six-line question about <code>memmem::find</code> correctly for
+38,051 tokens. That is the clearest demonstration in the repo of why recall alone is not a result.</p>
 
 <h2>Does any of this reproduce?<span class="chip ok">verified</span></h2>
 
@@ -173,7 +174,8 @@ happened to land on.</p>
     <tr><td>canonical (ripgrep + nudox-canonical)</td><td class="n">3</td><td class="n">20</td><td class="n good">100%</td></tr>
     <tr><td>baselines (ripgrep + rust-analyzer)</td><td class="n">3</td><td class="n">20</td><td class="n good">100%</td></tr>
     <tr><td>canonical, after two new scenarios</td><td class="n">3</td><td class="n">24</td><td class="n good">100%</td></tr>
-    <tr><td><strong>total</strong></td><td class="n"><strong>9</strong></td><td class="n"><strong>64</strong></td><td class="n good"><strong>100%</strong></td></tr>
+    <tr><td>canonical, all 14 scenarios</td><td class="n">3</td><td class="n">28</td><td class="n good">100%</td></tr>
+    <tr><td><strong>total</strong></td><td class="n"><strong>12</strong></td><td class="n"><strong>92</strong></td><td class="n good"><strong>100%</strong></td></tr>
   </tbody>
 </table></div>
 
@@ -243,7 +245,7 @@ kept passing ranking tests the entire time it was broken.</p>
 </ul>
 
 <div class="foot">
-  nudox-bench · every figure here is reproducible from the repository at <code>83ba190</code>
+  nudox-bench · every figure here is reproducible from the repository at <code>3f69190</code>
   · reasoning and retractions are logged in <code>analysis/DECISIONS.md</code>
 </div>
 
