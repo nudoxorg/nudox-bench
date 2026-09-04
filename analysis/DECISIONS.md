@@ -342,3 +342,25 @@ any repository that ships scripts, and which no amount of reading the source sug
 `go/uuid/exported-types` returns 38 matched lines and 0 context lines — entirely primary evidence,
 which is the independent confirmation that the Go export pattern added in D20 matches declarations
 rather than dragging them in through a window.
+
+## D28 — A published artifact that could not be rebuilt · INVALID (fixed)
+`scripts/build_presentation.py` read `/tmp/nb/imgs.json` — a scratch file **nothing in this
+repository produces** — and wrote to `/tmp/nb/results.html`. It was referenced in no document, took
+no arguments, and on any machine but this one simply failed. It happened to still work here only
+because a months-old `/tmp` directory had survived.
+
+So `results/2026-08-30/presentation.html`, a published artifact, could be admired and not rebuilt,
+in a repository whose entire claim is that its numbers can be reproduced.
+
+It now takes a run directory, reads the PNGs `plot_results.py` writes into `<run-dir>/charts/`,
+base64-encodes them itself, and exits with a clear instruction when the charts are absent rather
+than a `FileNotFoundError`.
+
+**Verified, not asserted:** regenerating from `results/2026-08-30/report.json` produces a file
+**byte-identical** to the published `presentation.html`. The whole chain — report → charts → page —
+now reproduces exactly.
+
+**A bug caught inside the fix.** The first version defaulted its output to `protocol.html`, which is
+a *different and shorter* published document in that same directory. Running it once would have
+overwritten a published artifact with an unrelated page. Caught by checking what was already on
+disk before trusting the name.

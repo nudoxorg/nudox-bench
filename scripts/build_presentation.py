@@ -1,7 +1,71 @@
-import json, pathlib
-imgs = json.load(open('/tmp/nb/imgs.json'))
+"""Rebuild the published results page from a run's own charts.
+
+The prose in this page is written about one specific run — the one published
+as `results/2026-08-30/` — so this regenerates that document rather than being
+a general report builder. It exists so the published artifact can be rebuilt
+instead of only admired.
+
+    usage: build_presentation.py [run-dir] [out.html]
+
+Output defaults to `<run-dir>/presentation.html`, which is *not* the shorter
+`protocol.html` already published from that directory.
+
+Charts are read from `<run-dir>/charts/`, which `plot_results.py <run-dir>`
+writes. Run that first.
+
+It used to read `/tmp/nb/imgs.json` — a scratch file nothing in this
+repository produces — so on any other machine it simply failed, in a project
+whose whole claim is that its numbers can be reproduced.
+"""
+import base64
+import pathlib
+import sys
+
+REPO = pathlib.Path(__file__).resolve().parent.parent
+DEFAULT_RUN = REPO / "results/2026-08-30"
+PLATES = ("efficiency", "cost_per_scenario", "resolution_gap", "surface_cost", "ablations")
+
+
+def _args():
+    rest = [a for a in sys.argv[1:] if a not in ("-h", "--help")]
+    if len(rest) != len(sys.argv[1:]):
+        print(__doc__)
+        sys.exit(0)
+    run = pathlib.Path(rest[0]) if rest else DEFAULT_RUN
+    # NOT protocol.html. That is a different, shorter document already
+    # published from this directory; this script builds the illustrated presentation page
+    # titled "Does the Index Beat Grep?", and defaulting to the other name
+    # would overwrite a published artifact with a different page.
+    out = pathlib.Path(rest[1]) if len(rest) > 1 else run / "presentation.html"
+    return run, out
+
+
+def _images(run_dir):
+    charts = run_dir / "charts"
+    if not charts.is_dir():
+        sys.exit("no charts in %s\n  run: python3 scripts/plot_results.py %s"
+                 % (charts, run_dir))
+    found = {}
+    for key in PLATES:
+        png = charts / ("%s.png" % key)
+        if png.is_file():
+            found[key] = base64.b64encode(png.read_bytes()).decode()
+    absent = [k for k in PLATES if k not in found]
+    if absent:
+        # Named rather than silently dropped: a plate that vanishes without a
+        # word is how a page quietly stops making its own argument.
+        print("warning: no chart for %s — those plates are omitted"
+              % ", ".join(absent), file=sys.stderr)
+    return found
+
+
+RUN_DIR, OUT_PATH = _args()
+imgs = _images(RUN_DIR)
+
 
 def plate(key, caption):
+    if key not in imgs:
+        return ""
     return f'''<figure class="plate">
   <img src="data:image/png;base64,{imgs[key]}" alt="{caption}">
 </figure>'''
@@ -448,5 +512,6 @@ HTML = (HTML
     .replace('PLATE_SURFACE', plate('surface_cost', 'Resident token cost per tool'))
     .replace('PLATE_ABLATIONS', plate('ablations', 'Nudox ablations by pass rate and cost')))
 
-pathlib.Path('/tmp/nb/results.html').write_text(HTML)
-print('bytes', len(HTML))
+OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+OUT_PATH.write_text(HTML)
+print("%s (%s bytes)" % (OUT_PATH, format(len(HTML), ",")))
