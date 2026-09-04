@@ -171,6 +171,7 @@ def render_summary(conn, run_id: str) -> str:
     rows = bench_db.summary(conn, run_id)
     out = ['<h2>Results</h2><div class="tablewrap"><table><thead><tr>'
            '<th>adapter</th><th>pass</th><th>declined</th><th>unscored</th>'
+           '<th>errored</th>'
            '<th>strict</th><th>matched</th><th>loose</th><th>gap</th>'
            '<th>distractors</th><th>tok/scenario</th><th>calls</th>'
            '</tr></thead><tbody>']
@@ -181,6 +182,16 @@ def render_summary(conn, run_id: str) -> str:
         if r["strict"] and r["matched"] is not None and r["strict"] - r["matched"] > 0.01:
             gap_note = ' title="%.0f%% of this recall came from lines printed around a match"' % (
                 (r["strict"] - r["matched"]) / r["strict"] * 100)
+        # An errored attempt counts as a failure in the pass rate, because a
+        # tool that could not answer did not answer. But a column of errors
+        # and a column of wrong answers mean entirely different things, so it
+        # is marked when non-zero rather than left to look like the latter.
+        errored = r["errored"] if "errored" in r.keys() else 0
+        errored = errored or 0
+        err_cell = "%d" % errored if errored else "&middot;"
+        err_note = "" if not errored else (
+            ' title="%d attempt(s) failed in the tool itself; they count as failures '
+            'in the pass rate but say nothing about what it can find"' % errored)
         # A distractor the answer never contained is a different finding from
         # one it did, so the two are shown as `total -> answer` when they part.
         total_d = r["distractors"] or 0
@@ -193,11 +204,13 @@ def render_summary(conn, run_id: str) -> str:
         out.append(
             '<tr><td><span class="dot" style="background:%s"></span>%s</td>'
             '<td class="num">%d/%d · %.0f%%</td><td class="num">%d</td><td class="num">%d</td>'
+            '<td class="num"%s>%s</td>'
             '<td class="num">%.2f</td><td class="num"%s>%.2f</td><td class="num">%.2f</td>'
             '<td class="num">%.2f</td><td class="num"%s>%s</td><td class="num">%.0f</td>'
             '<td class="num">%.1f</td></tr>' % (
                 colour(r["adapter"]), esc(r["adapter"]), r["passed"], r["attempted"], rate,
-                r["declined"], r["unscored"], r["strict"] or 0, gap_note, r["matched"] or 0,
+                r["declined"], r["unscored"], err_note, err_cell,
+                r["strict"] or 0, gap_note, r["matched"] or 0,
                 r["loose"] or 0, r["gap"] or 0, distr_note, distr,
                 r["tok_per_scenario"] or 0, r["calls"] or 0))
     out.append("</tbody></table></div>")

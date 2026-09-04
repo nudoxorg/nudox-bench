@@ -129,6 +129,7 @@ SELECT
     SUM(COALESCE(o.passed, 0))                            AS passed,
     SUM(o.unsupported IS NOT NULL)                        AS declined,
     SUM(o.unsupported IS NULL AND o.passed IS NULL)       AS unscored,
+    SUM(o.error IS NOT NULL)                              AS errored,
     AVG(CASE WHEN o.passed IS NOT NULL THEN o.strict  END) AS strict,
     AVG(CASE WHEN o.passed IS NOT NULL THEN o.matched END) AS matched,
     AVG(CASE WHEN o.passed IS NOT NULL THEN o.loose   END) AS loose,
@@ -165,6 +166,15 @@ ADDED_COLUMNS = {
 }
 
 
+# Views whose shape has changed since the first databases were built.
+#
+# `CREATE VIEW IF NOT EXISTS` is a no-op against a view that already exists,
+# so a changed definition reaches a fresh database and silently misses every
+# existing one — the same trap as ADDED_COLUMNS, one level up. Dropping is
+# safe: a view holds no data.
+REBUILT_VIEWS = ("adapter_summary",)
+
+
 def _migrate(conn: sqlite3.Connection) -> list[str]:
     """Add any column this file knows about that the database lacks."""
     added = []
@@ -176,6 +186,8 @@ def _migrate(conn: sqlite3.Connection) -> list[str]:
             if name not in present:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
                 added.append(f"{table}.{name}")
+    for view in REBUILT_VIEWS:
+        conn.execute(f"DROP VIEW IF EXISTS {view}")
     if added:
         conn.commit()
     return added
@@ -186,13 +198,15 @@ def connect(db_path: Path = DEFAULT_DB) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
     added = _migrate(conn)
+    # `_migrate` drops every rebuilt view, so run the schema again to recreate
+    # them against the shape that now exists. Unconditional on purpose: the
+    # rebuild used to happen only when a column was added, which meant a view
+    # whose own definition changed was never rebuilt at all.
+    conn.executescript(SCHEMA)
     if added:
         # Say so: a column that appears without explanation is worse than one
         # that announces itself once.
         print("  migrated: added %s" % ", ".join(added))
-        # The views were created against the old shape, so rebuild them.
-        conn.execute("DROP VIEW IF EXISTS adapter_summary")
-        conn.executescript(SCHEMA)
     return conn
 
 
@@ -518,15 +532,16 @@ def main(argv=None):
         if not rows:
             print("no such run: %s" % args.run_id)
             return 1
-        print("%-20s %10s %9s %9s %8s %8s %8s %7s %12s %7s" % (
-            "adapter", "pass", "declined", "unscored", "strict", "matched",
+        print("%-20s %10s %9s %9s %8s %8s %8s %8s %7s %12s %7s" % (
+            "adapter", "pass", "declined", "unscored", "errored", "strict", "matched",
             "loose", "gap", "tok/scenario", "calls"))
         for r in rows:
             rate = (r["passed"] / r["attempted"] * 100) if r["attempted"] else 0
-            print("%-20s %4d/%-3d %3.0f%% %9d %9d %8.2f %8.2f %8.2f %7.2f %12.0f %7.1f" % (
+            errored = r["errored"] if "errored" in r.keys() else 0
+            print("%-20s %4d/%-3d %3.0f%% %9d %9d %8d %8.2f %8.2f %8.2f %7.2f %12.0f %7.1f" % (
                 r["adapter"], r["passed"], r["attempted"], rate, r["declined"],
-                r["unscored"], r["strict"] or 0, r["matched"] or 0, r["loose"] or 0,
-                r["gap"] or 0, r["tok_per_scenario"] or 0, r["calls"] or 0))
+                r["unscored"], errored or 0, r["strict"] or 0, r["matched"] or 0,
+                r["loose"] or 0, r["gap"] or 0, r["tok_per_scenario"] or 0, r["calls"] or 0))
         return 0
 
     if args.command == "compare":
