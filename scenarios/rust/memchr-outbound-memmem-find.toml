@@ -1,0 +1,33 @@
+# Verified against memchr 2.8.3, src/memmem/mod.rs:185-191. The whole body is
+# six lines: below a 64-byte haystack it uses rabinkarp::Finder, otherwise the
+# crate's own Finder.
+id = "rust/memchr/outbound-memmem-find"
+family = "retrieval"
+task = "outbound"
+question = """
+What does `memchr::memmem::find` call to do its work, and what does it dispatch on?"""
+
+[target]
+ecosystem = "crates.io"
+package = "memchr"
+version = "2.8.3"
+root = "${CARGO_SRC}/memchr-2.8.3"
+
+[probe]
+name = "find"
+symbol = "memchr::memmem::find"
+query = "memchr memmem find implementation"
+kind = "function"
+
+[truth]
+mode = "literal"
+all_of = ["rabinkarp", "Finder", "64"]
+
+[budget]
+max_tool_calls = 3
+token_budget = 6000
+
+notes = """
+The body is six lines and names everything the answer needs, so this is not a hard question about the code. It is a hard question about *addressing*: `find` is one of the most common identifiers in any Rust crate, and memchr defines several — `Finder::find`, `FinderRev::find`, `rabinkarp::Finder::find` among them. A tool given the qualified path `memchr::memmem::find` goes straight to six lines; a tool given the word `find` cannot tell which one was meant and pays for every candidate.
+
+`64` is the dispatch threshold and is required, because naming the two implementations without the condition does not answer the question that was asked."""
