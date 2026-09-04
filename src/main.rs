@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
-use nudox_bench::config::RunConfig;
+use nudox_bench::config::{AdapterConfig, RunConfig};
 use nudox_bench::mcp::{McpClient, McpTransport};
 use nudox_bench::runner::{self, RunOptions};
 use nudox_bench::scenario;
@@ -66,6 +66,11 @@ enum Command {
     Doctor {
         #[arg(long, default_value = "scenarios")]
         scenarios: PathBuf,
+        /// Check the adapters this config declares, rather than the standard
+        /// set. Without it `doctor` surveys every tool the repo knows about,
+        /// which answers "what is installed" but not "will this run work".
+        #[arg(long)]
+        config: Option<PathBuf>,
         /// Also try the Nudox endpoint.
         #[arg(long, env = "NUDOX_MCP_URL")]
         url: Option<String>,
@@ -96,6 +101,143 @@ async fn which_ok(bin: &str, args: &[&str]) -> Option<String> {
     }
     let text = String::from_utf8_lossy(&output.stdout);
     Some(text.lines().next().unwrap_or("").trim().to_owned())
+}
+
+/// Check exactly the adapters one config declares, and return how many of
+/// them a run could not use.
+///
+/// # Why this is not the same as the standard survey
+///
+/// `doctor` without a config reports what is installed on this machine. That
+/// answers a different question from the one someone is usually asking, which
+/// is whether *this run* will work. A config naming only `ripgrep` should not
+/// fail because rust-analyzer is absent, and a config naming
+/// `nudox-canonical` should say so when the binary it needs was never built.
+async fn check_declared(config: &RunConfig) -> usize {
+    let mut problems = 0usize;
+    for adapter in &config.adapters {
+        match adapter {
+            AdapterConfig::Ripgrep => match which_ok("rg", &["--version"]).await {
+                Some(version) => println!("  ok      ripgrep — {version}"),
+                None => {
+                    problems += 1;
+                    println!("  MISSING ripgrep: `rg` is not runnable");
+                }
+            },
+            AdapterConfig::RustAnalyzer => {
+                let bin = std::env::var("RUST_ANALYZER_BIN")
+                    .unwrap_or_else(|_| "rust-analyzer".to_owned());
+                match which_ok(&bin, &["--version"]).await {
+                    Some(version) => println!("  ok      rust-analyzer — {version}"),
+                    None => {
+                        problems += 1;
+                        println!(
+                            "  MISSING `{bin}` is not runnable.\n          \
+                             rustup component add rust-analyzer\n          \
+                             or export RUST_ANALYZER_BIN=/path/to/rust-analyzer"
+                        );
+                    }
+                }
+            }
+            AdapterConfig::Nudox { url, token_env, policy } => {
+                let policy = policy.as_deref().unwrap_or("full");
+                let Some(url) = url
+                    .clone()
+                    .or_else(|| std::env::var("NUDOX_MCP_URL").ok())
+                else {
+                    problems += 1;
+                    println!(
+                        "  MISSING nudox ({policy}): no endpoint. Set `url` in the config \
+                         or $NUDOX_MCP_URL"
+                    );
+                    continue;
+                };
+                let token_var = token_env.as_deref().unwrap_or("NUDOX_MCP_TOKEN");
+                let token = std::env::var(token_var).ok().filter(|t| !t.trim().is_empty());
+                match McpClient::connect(McpTransport::Http { url: url.clone(), token }).await {
+                    Ok(client) => println!(
+                        "  ok      nudox ({policy}) — {}, {} tools, {} cl100k resident",
+                        client.server_name(),
+                        client.tools().len(),
+                        client.resident_cost().cl100k
+                    ),
+                    Err(error) => {
+                        problems += 1;
+                        println!("  FAILED  nudox ({policy}) at {url}: {error:#}");
+                    }
+                }
+            }
+            AdapterConfig::NudoxCanonical { binary, .. } => {
+                let Some(binary) = binary
+                    .clone()
+                    .or_else(|| std::env::var("NUDOX_CANONICAL_CLI").ok())
+                else {
+                    problems += 1;
+                    println!(
+                        "  MISSING nudox-canonical: no CLI. Set `binary` in the config or \
+                         $NUDOX_CANONICAL_CLI\n          \
+                         (cargo build -p interface-cli, in the Backend checkout)"
+                    );
+                    continue;
+                };
+                let Some(reply) = which_ok(&binary, &["health", "1"]).await else {
+                    problems += 1;
+                    println!("  MISSING nudox-canonical: `{binary}` is not runnable");
+                    continue;
+                };
+                // The binary answering is not the same as the capabilities
+                // being present: canonical builds and runs with its whole
+                // index plane unwired, and says so only in this roll-call.
+                let down = unavailable_capabilities(&reply);
+                if down.is_empty() {
+                    println!("  ok      nudox-canonical — every capability ready");
+                } else {
+                    println!(
+                        "  ok      nudox-canonical — runs, but {} unavailable: {}",
+                        down.len(),
+                        down.join(", ")
+                    );
+                    if down.iter().any(|c| c == "index") {
+                        println!(
+                            "          every scenario will report `unsupported`; the index \
+                             plane is not wired to interface-core"
+                        );
+                    }
+                }
+            }
+            AdapterConfig::McpStdio { name, .. } => {
+                problems += 1;
+                println!("  MISSING adapter `{name}`: the generic stdio MCP adapter is declared but not wired yet");
+            }
+        }
+    }
+    problems
+}
+
+/// Capability names a canonical health reply reports as anything but ready.
+///
+/// Returns nothing for a reply this cannot parse, because guessing at an
+/// unfamiliar envelope would turn a surface change into a false alarm.
+fn unavailable_capabilities(reply: &str) -> Vec<String> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(reply) else {
+        return Vec::new();
+    };
+    let Some(facts) = value
+        .get("body")
+        .and_then(|body| body.get("facts"))
+        .and_then(|facts| facts.as_array())
+    else {
+        return Vec::new();
+    };
+    facts
+        .iter()
+        .filter(|fact| fact.get("state").and_then(|s| s.as_str()) != Some("local_ready"))
+        .filter_map(|fact| {
+            fact.get("capability")
+                .and_then(|c| c.as_str())
+                .map(str::to_owned)
+        })
+        .collect()
 }
 
 #[tokio::main]
@@ -198,6 +340,7 @@ async fn main() -> Result<()> {
 
         Command::Doctor {
             scenarios: scenario_dir,
+            config,
             url,
             token,
         } => {
@@ -239,6 +382,30 @@ async fn main() -> Result<()> {
                     "\n  Set the named variable(s), e.g.:\n    \
                      export NODE_MODULES=/path/to/node_modules"
                 );
+            }
+
+            if let Some(path) = &config {
+                let declared = RunConfig::load(path)?;
+                println!("\nadapters declared by {}", path.display());
+                problems += check_declared(&declared).await;
+
+                println!("\njudge");
+                if std::env::var("OPENROUTER_API_KEY").is_ok() {
+                    println!("  ok      OPENROUTER_API_KEY is set; --judge will run");
+                } else {
+                    println!(
+                        "  absent  OPENROUTER_API_KEY unset — implementation scenarios \
+                         report as `unscored`, which is not a failure"
+                    );
+                }
+                if problems > 0 {
+                    println!(
+                        "\n{problems} problem(s). A run will still work for whatever is ok above."
+                    );
+                    std::process::exit(1);
+                }
+                println!("\nall good.");
+                return Ok(());
             }
 
             println!("\nbaseline tools");
@@ -329,4 +496,34 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unavailable_capabilities;
+
+    #[test]
+    fn a_health_reply_names_what_is_not_ready() {
+        let reply = r#"{"correlation":1,"body":{"kind":"health","facts":[
+            {"capability":"compiler_registry","state":"local_ready"},
+            {"capability":"index","state":"unavailable"},
+            {"capability":"graph","state":"unavailable"}]},
+            "terminal":{"kind":"partial"},"diagnostic":null}"#;
+        assert_eq!(unavailable_capabilities(reply), vec!["index", "graph"]);
+    }
+
+    #[test]
+    fn a_fully_ready_engine_reports_nothing() {
+        let reply = r#"{"body":{"kind":"health","facts":[
+            {"capability":"index","state":"local_ready"}]}}"#;
+        assert!(unavailable_capabilities(reply).is_empty());
+    }
+
+    #[test]
+    fn an_unparseable_reply_raises_no_false_alarm() {
+        // A surface change must not be reported as a missing capability:
+        // that would send someone looking for an outage that is not there.
+        assert!(unavailable_capabilities("not json at all").is_empty());
+        assert!(unavailable_capabilities(r#"{"body":{"kind":"rejected"}}"#).is_empty());
+    }
 }
