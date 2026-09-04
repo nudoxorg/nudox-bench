@@ -156,8 +156,10 @@ last three runs, which usually spans changes, so asserting "flaky" would be wron
 - `configs/baselines.toml` (ripgrep + rust-analyzer), 3 runs: 20 cells, **100%**, no cost moved
   more than 5%.
 - `configs/canonical.toml` after the two new scenarios, 3 runs: 24 cells, **100%**.
+- 14 scenarios, 3 runs: 28 cells, **100%**.
+- 15 scenarios, 3 runs: 30 cells, **100%**.
 
-Running total: **64 cells over 9 runs, nothing moved.**
+Running total: **122 cells over 15 runs, nothing moved.**
 
 The second is the one worth having. rust-analyzer is a stateful LSP server restarted and
 re-indexed for each run, which is exactly where a benchmark would be expected to wobble, and it
@@ -234,3 +236,15 @@ of what it found came from lines printed *around* a match.
 
 Both were verified against the source on disk — line numbers, occurrence counts, the doc-comment
 boundary — before anything was written down.
+
+## D22 — No latent panics outside test code; audited, not assumed · HOLDS
+After fixing the three byte-offset panics, swept the whole crate for panic-capable calls outside
+`#[cfg(test)]`. Four remain and each was checked rather than waved through:
+
+- `tokens.rs` ×2 — `expect` on the bundled BPE ranks. If those fail nothing in the crate works.
+- `rust_analyzer.rs:260` — `expect("just installed")`. Both branches of `server_for` leave
+  `self.server` as `Some`, so it is provable, not hopeful.
+- `mcp/client.rs:347` — `unreachable!("http_post on a stdio transport")`. Both call sites sit
+  inside `Transport::Http { .. }` match arms, so it genuinely cannot be reached.
+
+`nudox.rs`, the largest adapter, has **no** `unwrap`/`expect` in non-test code at all.

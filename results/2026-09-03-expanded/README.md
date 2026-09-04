@@ -1,48 +1,49 @@
-# Canonical, 2026-09-03 — 14 scenarios
+# Canonical, 2026-09-03 — 15 scenarios
 
 Backend `canonical` @ `2f82d74b`, through `interface-cli`. Same conclusion as
 `../2026-09-03-canonical/`, on a suite half again as large.
 
 | adapter | pass | attempted | unsupported | strict | matched | distractors | tok/scenario |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| nudox-canonical | 0/0 | **0** | **14** | — | — | — | — |
-| ripgrep | 7/10 (70%) | 10 | 2 | 0.97 | 0.63 | 5 | 10,314 |
+| nudox-canonical | 0/0 | **0** | **15** | — | — | — | — |
+| ripgrep | 8/11 (73%) | 11 | 2 | 0.97 | 0.58 | 5 | 9,452 |
 
 ## By family
 
 | family | ripgrep | strict | tok/scenario |
 |---|---:|---:|---:|
 | efficiency | 1/1 (100%) | 1.00 | 664 |
-| polyglot | 3/4 (75%) | 1.00 | 4,119 |
-| retrieval | 3/5 (60%) | 0.93 | 17,200 |
+| polyglot | 3/4 (75%) | 1.00 | 4,118 |
+| retrieval | 4/6 (67%) | 0.94 | 14,472 |
 | implementation | — (2 unscored) | — | — |
 
-## What the four new scenarios added
+**Strict recall 0.97 against a 73% pass rate.** Every remaining failure is
+precision or cost, not finding — which is the shape the five new scenarios were
+built to expose.
 
-Two of them cover task kinds that had **no scenario at all** — `implementors`
-and `outbound` — so those adapter paths had never been exercised.
+## The five scenarios added on this date
 
-- `py/requests/toplevel-exceptions` — precision, not recall. requests re-exports
-  10 of the 25 classes `exceptions.py` defines. A tool that answers by printing
-  the module scores full recall and trips every distractor. **This one found a
-  real adapter bug**: ripgrep's overview search grepped `pub |export |public `,
-  which matches nothing in Python. It had been scoring 0.00 on 146 tokens for a
-  question it never actually asked.
-- `go/uuid/exported-types` — whether a tool models Go's own export rule (capital
-  first letter) rather than pattern-matching `type` lines. ripgrep passes, 1,406
-  tokens, no distractors.
-- `rust/memchr/implementors-frequency-rank` — code versus documentation. The
-  trait's doc comment contains a compiling example `impl ... for Binary`, so the
-  string is in the source and is not an implementation. ripgrep returns all
-  three impl lines: full recall, one distractor, 347 tokens, fail.
-- `rust/memchr/outbound-memmem-find` — addressing, not comprehension. A six-line
-  body, but `find` is one of the commonest names in any Rust crate. ripgrep
-  passes at **38,051 tokens**, matched recall 0.33 against strict 1.00.
+Two cover task kinds that had **no scenario at all** (`implementors`,
+`outbound`), so those adapter paths had never been exercised.
 
-Note the polyglot and retrieval rows: strict recall stays near 1.00 while the
-pass rate does not. Every remaining failure is precision or cost, not finding.
+| scenario | what it isolates | ripgrep |
+|---|---|---|
+| `py/requests/toplevel-exceptions` | precision: 10 of 25 classes are re-exported | strict 1.00, 4 distractors, **fail** |
+| `go/uuid/exported-types` | Go's own export rule (capital initial) | pass, 1,406 tok |
+| `rust/memchr/implementors-frequency-rank` | code vs. documentation | strict 1.00, 1 distractor, **fail**, 347 tok |
+| `rust/memchr/outbound-memmem-find` | addressing, not comprehension | pass, **38,051 tok**, matched 0.33 |
+| `rust/hashbrown/definition-tryreserveerror` | package diversity | pass, 601 tok, matched **0.00** |
+
+The first one found a real adapter bug: ripgrep's overview search grepped
+`pub |export |public `, which matches nothing in Python. It had been scoring
+0.00 on 146 tokens for a question it never actually asked.
+
+The last one produced the widest strict-versus-matched split in the corpus —
+1.00 against 0.00. It greps the declaration and reads the variants out of the
+context printed after it, so every fact arrived as surrounding text rather than
+as something the tool matched.
 
 ## Reproducibility
 
 `nbench verify --config configs/canonical.toml --repeat 3` over this suite:
-**28 cells, 100% reproduced, no cost moved more than 5%.**
+**30 cells, 100% reproduced, no cost moved more than 5%.**
