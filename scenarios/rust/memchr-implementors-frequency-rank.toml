@@ -1,0 +1,40 @@
+# Verified against memchr 2.8.3 on disk. `HeuristicFrequencyRank` is declared at
+# src/arch/all/packedpair/mod.rs:309 and implemented exactly twice: for
+# DefaultFrequencyRank at :323 and blanket for &'a R at :331. The identifier
+# `Binary` appears three times in that file and every one of them is inside the
+# trait's doc comment — it is not a type this crate defines.
+id = "rust/memchr/implementors-frequency-rank"
+family = "retrieval"
+task = "implementors"
+question = """
+Which types in memchr implement the `HeuristicFrequencyRank` trait?"""
+
+[target]
+ecosystem = "crates.io"
+package = "memchr"
+version = "2.8.3"
+root = "${CARGO_SRC}/memchr-2.8.3"
+
+[probe]
+name = "HeuristicFrequencyRank"
+symbol = "memchr::arch::all::packedpair::HeuristicFrequencyRank"
+query = "implementations of HeuristicFrequencyRank"
+kind = "trait"
+
+[truth]
+mode = "symbol_set"
+all_of = ["DefaultFrequencyRank"]
+# `Binary` is a worked example in the trait's own doc comment: `struct Binary;`
+# followed by `impl HeuristicFrequencyRank for Binary`. It compiles as
+# documentation and exists nowhere in the crate. A tool that cannot separate
+# code from the prose around it will answer with it.
+none_of = ["Binary"]
+
+[budget]
+max_tool_calls = 3
+token_budget = 4000
+
+notes = """
+This is the only scenario in the set that turns on telling code from documentation. The doc comment for `HeuristicFrequencyRank` contains a complete, compiling example impl for a type called `Binary`, so the string `impl HeuristicFrequencyRank for Binary` is present in the source and is not an implementation.
+
+The blanket `impl<'a, R> HeuristicFrequencyRank for &'a R` is deliberately not in `all_of`: it names no nameable type, and requiring a particular spelling of it would score a formatting convention rather than a fact."""
