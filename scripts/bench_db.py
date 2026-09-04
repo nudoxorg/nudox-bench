@@ -404,6 +404,39 @@ def compare(conn, run_a: str, run_b: str) -> list[sqlite3.Row]:
     ).fetchall()
 
 
+
+def stability(conn, run_ids: list[str]) -> list[sqlite3.Row]:
+    """Per scenario+adapter, what moved across a set of runs.
+
+    Whether movement is a *fault* depends entirely on what the runs are. Over
+    repeats of one build it is flakiness, and a verdict that moves means a
+    published pass rate is partly luck. Over runs spanning a code change it is
+    a changelog. The query cannot tell them apart and does not try; the caller
+    says which it asked for.
+    """
+    marks = ",".join("?" for _ in run_ids)
+    return conn.execute(
+        "SELECT scenario_id, adapter, COUNT(*) AS n,"
+        "       COUNT(DISTINCT CASE WHEN unsupported IS NOT NULL THEN 'declined'"
+        "                           WHEN passed IS NULL THEN 'unscored'"
+        "                           WHEN passed = 1 THEN 'pass' ELSE 'fail' END)"
+        "         AS verdicts,"
+        "       GROUP_CONCAT(CASE WHEN unsupported IS NOT NULL THEN 'declined'"
+        "                         WHEN passed IS NULL THEN 'unscored'"
+        "                         WHEN passed = 1 THEN 'pass' ELSE 'fail' END)"
+        "         AS seen,"
+        "       COUNT(DISTINCT CAST(ROUND(IFNULL(strict, 0) * 100) AS INTEGER))"
+        "         AS scores,"
+        "       MIN(IFNULL(marginal, 0)) AS tok_lo,"
+        "       MAX(IFNULL(marginal, 0)) AS tok_hi"
+        f" FROM outcomes WHERE run_id IN ({marks})"
+        " GROUP BY scenario_id, adapter"
+        " HAVING n > 1"
+        " ORDER BY verdicts DESC, scores DESC, scenario_id, adapter",
+        run_ids,
+    ).fetchall()
+
+
 # --- CLI --------------------------------------------------------------------
 
 def _verdict(row, prefix="") -> str:
@@ -432,6 +465,13 @@ def main(argv=None):
     p_compare = sub.add_parser("compare", help="what changed between two runs")
     p_compare.add_argument("run_a")
     p_compare.add_argument("run_b")
+
+    p_stab = sub.add_parser(
+        "stability", help="what moved across several runs of the same thing")
+    p_stab.add_argument("runs", nargs="*",
+                        help="run ids; defaults to the most recent --last")
+    p_stab.add_argument("--last", type=int, default=3,
+                        help="use the N most recent runs (default 3)")
 
     args = parser.parse_args(argv)
     conn = connect(args.db)
@@ -496,6 +536,47 @@ def main(argv=None):
                                                  else ("pass" if r["passed_b"] else "fail"))
             print("%-44s %-20s %-10s -> %-10s %d -> %d" % (
                 r["scenario_id"], r["adapter"], va, vb, r["tok_a"] or 0, r["tok_b"] or 0))
+        return 0
+
+    if args.command == "stability":
+        run_ids = args.runs or [r["run_id"] for r in list_runs(conn)[: args.last]]
+        if len(run_ids) < 2:
+            print("need at least two runs; one run cannot disagree with itself")
+            return 1
+        rows = stability(conn, run_ids)
+        if not rows:
+            print("no scenario+adapter appears in more than one of: %s"
+                  % ", ".join(run_ids))
+            return 1
+        moved_verdict = [r for r in rows if r["verdicts"] > 1]
+        moved_score = [r for r in rows if r["verdicts"] == 1 and r["scores"] > 1]
+        solid = len(rows) - len(moved_verdict) - len(moved_score)
+        print("%d cell(s) across %d runs: %s" % (len(rows), len(run_ids), ", ".join(run_ids)))
+        print("%d reproduced exactly (%.0f%%)\n" % (solid, solid / len(rows) * 100))
+
+        if moved_verdict:
+            print("VERDICT MOVED — flakiness if these are repeats of one build;")
+            print("               a changelog if they span code changes. This cannot tell.")
+            for r in moved_verdict:
+                print("  %-44s %-18s %s" % (r["scenario_id"], r["adapter"], r["seen"]))
+            print()
+        if moved_score:
+            print("recall moved while the verdict held")
+            for r in moved_score:
+                print("  %-44s %-18s %d distinct strict values"
+                      % (r["scenario_id"], r["adapter"], r["scores"]))
+            print()
+        drifting = [r for r in rows if r["tok_hi"] > r["tok_lo"]]
+        if drifting:
+            print("cost moved (ordinary across a process or a network)")
+            for r in sorted(drifting, key=lambda x: -(x["tok_hi"] - x["tok_lo"]))[:10]:
+                print("  %-44s %-18s %d..%d" % (
+                    r["scenario_id"], r["adapter"], r["tok_lo"], r["tok_hi"]))
+        elif not moved_verdict and not moved_score:
+            print("nothing moved at all.")
+        # Always 0: this is a view over whatever runs were asked for, and the
+        # default set spans code changes, where movement is expected. The gate
+        # is `nbench verify`, which controls the runs it compares.
         return 0
 
     return 0
