@@ -1,6 +1,6 @@
-# nudox-bench run `run-2026-09-03-233326`
+# nudox-bench run `run-2026-09-03-233653`
 
-2026-09-03T23:33:31.432024643-04:00
+2026-09-03T23:36:59.101350539-04:00
 
 ## Surface cost before any question
 
@@ -22,7 +22,7 @@ What each system puts in an agent's context before it is asked anything: tool de
 | adapter | pass | attempted | unsup. | unscored | errored | strict | matched | loose | gap | distractors | tok/scenario | tok/pass | calls |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | nudox-canonical | 0/0 (0%) | 0 | 15 | 0 | 0 | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 0 | — | 0.0 |
-| ripgrep | 8/11 (73%) | 11 | 2 | 2 | 0 | 0.97 | 0.58 | 1.00 | 0.03 | 5 | 9452 | 12996 | 1.0 |
+| ripgrep | 9/12 (75%) | 12 | 1 | 2 | 0 | 0.97 | 0.61 | 1.00 | 0.03 | 5 | 8780 | 11706 | 1.0 |
 
 ## By family
 
@@ -36,8 +36,8 @@ The four families ask structurally different things. A single pass rate hides wh
 | nudox-canonical | retrieval | — | 7 | 0 | 0.00 | 0 |
 | ripgrep | efficiency | 1/1 (100%) | 0 | 0 | 1.00 | 664 |
 | ripgrep | implementation | — | 0 | 2 | 0.00 | 0 |
-| ripgrep | polyglot | 3/4 (75%) | 1 | 0 | 1.00 | 4118 |
-| ripgrep | retrieval | 4/6 (67%) | 1 | 0 | 0.94 | 14472 |
+| ripgrep | polyglot | 4/5 (80%) | 0 | 0 | 1.00 | 3498 |
+| ripgrep | retrieval | 4/6 (67%) | 1 | 0 | 0.94 | 14534 |
 
 ## Per scenario
 
@@ -54,10 +54,10 @@ The four families ask structurally different things. A single pass rate hides wh
 | `rust/memchr/implement-three-byte-scan` | implementation | n/a | unscored |
 | `rust/memchr/implementors-frequency-rank` | retrieval | n/a | fail 100% (343) |
 | `rust/memchr/iter-return-type` | efficiency | n/a | pass (656) |
-| `rust/memchr/outbound-memmem-find` | retrieval | n/a | pass (37371) |
+| `rust/memchr/outbound-memmem-find` | retrieval | n/a | pass (37744) |
 | `rust/memchr/public-surface` | retrieval | n/a | pass (18159) |
 | `rust/memchr/signature-memchr3` | retrieval | n/a | pass (627) |
-| `ts/commander/public-surface` | polyglot | n/a | n/a |
+| `ts/commander/public-surface` | polyglot | n/a | pass (956) |
 
 ## Declined
 
@@ -80,4 +80,3 @@ Scenarios an adapter could not express. Not failures — these are the shape of 
   - `rust/memchr/signature-memchr3`
   - `ts/commander/public-surface`
 - `rust/hashbrown/diff-0.16.1-to-0.17.1` / **ripgrep** — comparing two versions needs two checkouts; the scenario carries one
-- `ts/commander/public-surface` / **ripgrep** — target.root does not exist: ${NODE_MODULES}/commander

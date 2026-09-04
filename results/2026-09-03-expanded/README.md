@@ -1,25 +1,29 @@
-# Canonical, 2026-09-03 — 15 scenarios
+# Canonical, 2026-09-03 — 15 scenarios, every root resolved
 
 Backend `canonical` @ `2f82d74b`, through `interface-cli`. Same conclusion as
-`../2026-09-03-canonical/`, on a suite half again as large.
+`../2026-09-03-canonical/`, on a suite half again as large and with `$NODE_MODULES`
+pointed at a real checkout for the first time.
 
 | adapter | pass | attempted | unsupported | strict | matched | distractors | tok/scenario |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | nudox-canonical | 0/0 | **0** | **15** | — | — | — | — |
-| ripgrep | 8/11 (73%) | 11 | 2 | 0.97 | 0.58 | 5 | 9,452 |
+| ripgrep | 9/12 (75%) | 12 | 1 | 0.97 | 0.61 | 5 | 8,780 |
 
 ## By family
 
 | family | ripgrep | strict | tok/scenario |
 |---|---:|---:|---:|
 | efficiency | 1/1 (100%) | 1.00 | 664 |
-| polyglot | 3/4 (75%) | 1.00 | 4,118 |
-| retrieval | 4/6 (67%) | 0.94 | 14,472 |
+| polyglot | 4/5 (80%) | 1.00 | 3,498 |
+| retrieval | 4/6 (67%) | 0.94 | 14,534 |
 | implementation | — (2 unscored) | — | — |
 
-**Strict recall 0.97 against a 73% pass rate.** Every remaining failure is
-precision or cost, not finding — which is the shape the five new scenarios were
-built to expose.
+**Strict recall 0.97 against a 75% pass rate.** Every remaining failure is
+precision or cost, not finding.
+
+`ts/commander/public-surface` scores here for the first time — it had declined
+for this repository's entire history because `$NODE_MODULES` was unset, and the
+package was on this machine the whole time. It passes at 956 tokens.
 
 ## The five scenarios added on this date
 
@@ -34,14 +38,14 @@ Two cover task kinds that had **no scenario at all** (`implementors`,
 | `rust/memchr/outbound-memmem-find` | addressing, not comprehension | pass, **38,051 tok**, matched 0.33 |
 | `rust/hashbrown/definition-tryreserveerror` | package diversity | pass, 601 tok, matched **0.00** |
 
-The first one found a real adapter bug: ripgrep's overview search grepped
+The first found a real adapter bug: ripgrep's overview search grepped
 `pub |export |public `, which matches nothing in Python. It had been scoring
 0.00 on 146 tokens for a question it never actually asked.
 
-The last one produced the widest strict-versus-matched split in the corpus —
-1.00 against 0.00. It greps the declaration and reads the variants out of the
-context printed after it, so every fact arrived as surrounding text rather than
-as something the tool matched.
+The last produced the widest strict-versus-matched split in the corpus — 1.00
+against 0.00. It greps the declaration and reads the variants out of the context
+printed after it, so every fact arrived as surrounding text rather than as
+something the tool matched.
 
 ## Reproducibility
 
