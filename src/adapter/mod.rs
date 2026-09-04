@@ -15,6 +15,7 @@
 //! steps. So the mapping moves into the adapter: the harness hands over a
 //! question, and each system answers it the way that system is actually used.
 
+pub mod canonical;
 pub mod nudox;
 pub mod ripgrep;
 pub mod rust_analyzer;

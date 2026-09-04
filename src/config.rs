@@ -33,6 +33,22 @@ pub enum AdapterConfig {
         #[serde(default)]
         token_env: Option<String>,
     },
+    /// Nudox as it exists on `canonical`, over the `interface-cli`
+    /// application protocol. Separate from `Nudox` because canonical shares
+    /// neither the transport nor the tool names of the MCP engine.
+    NudoxCanonical {
+        /// Path to the built `interface-cli`. Defaults to
+        /// `$NUDOX_CANONICAL_CLI`.
+        #[serde(default)]
+        binary: Option<String>,
+        /// Snapshot name to pin. Defaults to `primary`.
+        #[serde(default)]
+        snapshot: Option<String>,
+        /// Result limit. Canonical caps this at 4 and rejects anything
+        /// larger before the query reaches a capability.
+        #[serde(default)]
+        limit: Option<u32>,
+    },
     /// Text search over the package checkout.
     Ripgrep,
     /// rust-analyzer over LSP.

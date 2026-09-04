@@ -1,0 +1,25 @@
+# Nudox as it exists on `canonical`, alongside the tools an agent already has.
+#
+# Canonical replaced `workspace/nudox-engine` with a
+# `compiler/ interface/ server/ heart/` layout, so the MCP endpoint the
+# `nudox` adapter speaks to no longer exists. This config drives the surface
+# canonical actually ships: the application protocol over `interface-cli`.
+#
+# Build the binary first, in the Backend checkout:
+#
+#     cargo build -p interface-cli
+#     export NUDOX_CANONICAL_CLI=$PWD/target/debug/interface-cli
+#
+# At the time of writing every retrieval action answers
+# `dependency_unavailable(index)`: the index plane under `server/index/*` is
+# built but not wired to `interface-core`. Attempts come back `unsupported`
+# rather than scoring zero, so the ripgrep and rust-analyzer columns remain
+# the readable part of this run.
+name = "canonical"
+description = "Nudox on canonical via interface-cli, against the baseline tools"
+
+[[adapter]]
+kind = "nudox-canonical"
+
+[[adapter]]
+kind = "ripgrep"

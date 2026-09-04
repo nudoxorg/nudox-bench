@@ -110,3 +110,16 @@ family; `RankedKey` carries no family, so the legacy category error stays expres
 satisfied by a comparator that ignores family. Legacy had passing ranking tests the whole time.
 **Honest limit:** the evidence is from the deleted engine. It is a prior about a failure mode, not a
 measurement of the new plane, and the document says so rather than borrowing authority it lacks.
+
+## D15 — Ran the harness against canonical anyway, and shipped the adapter · HOLDS
+Built `interface-cli` from `2f82d74b` and drove it. Health reports `index`, `graph`, `vector`
+all `unavailable`; every retrieval action returns `dependency_unavailable` with `emitted: 0`.
+Empirical, from a running binary — not the grep argument D13 rested on.
+**Built:** `src/adapter/canonical.rs` + `configs/canonical.toml`. It speaks the application
+protocol over argv, because canonical shares neither the transport nor the tool names of the old
+MCP engine — pointing the `nudox` adapter at it would have failed at connect and read as an outage.
+**Result:** `results/2026-09-03-canonical/` — nudox-canonical 0 attempted / 10 unsupported,
+ripgrep 5/6 (83%). Recorded as **unsupported, never a zero score**; the harness already refuses to
+average "cannot be asked" with "answered wrongly", and this is the case that vocabulary was for.
+**Why ship an adapter that returns nothing:** it needs no change when the plane is wired, and the
+ripgrep column is a same-day baseline for that comparison to be read against.

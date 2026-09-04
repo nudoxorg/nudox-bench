@@ -7,3 +7,6 @@ endpoint/target/
 /results.db-wal
 /results.db-shm
 __pycache__/
+
+# Agent worktrees: separate checkouts, never part of this repo.
+.claude/

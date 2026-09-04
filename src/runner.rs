@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use crate::adapter::nudox::NudoxAdapter;
+use crate::adapter::canonical::CanonicalAdapter;
 use crate::adapter::ripgrep::RipgrepAdapter;
 use crate::adapter::rust_analyzer::RustAnalyzerAdapter;
 use crate::adapter::Adapter;
@@ -57,6 +58,22 @@ pub async fn build_adapters(
                     .await
                     .with_context(|| format!("connecting to Nudox at {url}"))?;
                 adapters.push(Box::new(adapter));
+            }
+            AdapterConfig::NudoxCanonical { binary, snapshot, limit } => {
+                let binary = binary
+                    .clone()
+                    .or_else(|| std::env::var("NUDOX_CANONICAL_CLI").ok())
+                    .context(
+                        "no canonical CLI: set `binary` in the config or \
+                         $NUDOX_CANONICAL_CLI. Build it with \
+                         `cargo build -p interface-cli` in the Backend checkout",
+                    )?;
+                adapters.push(Box::new(CanonicalAdapter::new(
+                    binary.into(),
+                    snapshot.clone().unwrap_or_else(|| "primary".to_owned()),
+                    limit.unwrap_or(4),
+                    keep_responses,
+                )));
             }
             AdapterConfig::Ripgrep => {
                 adapters.push(Box::new(RipgrepAdapter::new(keep_responses)));
