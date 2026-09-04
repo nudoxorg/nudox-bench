@@ -91,7 +91,7 @@
   connected to anything.</p>
   <div class="meta">
     <span><b>date</b> 2026-09-03</span>
-    <span><b>nudox-bench</b> 3697fc1</span>
+    <span><b>nudox-bench</b> 1696c93</span>
     <span><b>Backend canonical</b> 2f82d74b</span>
     <span><b>scenarios</b> 15</span>
     <span><b>tests</b> 80</span>
@@ -132,7 +132,7 @@ is simply not wired to the application service yet. No flag turns it on.</p>
   <thead><tr><th>adapter</th><th>pass</th><th>attempted</th><th>unsup.</th><th>unscored</th><th>errored</th><th>strict</th><th>matched</th><th>tok/scenario</th></tr></thead>
   <tbody>
     <tr><td>nudox-canonical</td><td class="n dim">0/0</td><td class="n">0</td><td class="n bad">15</td><td class="n">0</td><td class="n">0</td><td class="n dim">—</td><td class="n dim">—</td><td class="n dim">—</td></tr>
-    <tr><td>ripgrep</td><td class="n good">8/11 · 73%</td><td class="n">11</td><td class="n">2</td><td class="n">2</td><td class="n">0</td><td class="n">0.97</td><td class="n">0.58</td><td class="n">9,452</td></tr>
+    <tr><td>ripgrep</td><td class="n good">9/12 · 75%</td><td class="n">12</td><td class="n">1</td><td class="n">2</td><td class="n">0</td><td class="n">0.97</td><td class="n">0.61</td><td class="n">8,780</td></tr>
   </tbody>
 </table></div>
 
@@ -149,8 +149,8 @@ false.</p>
   <thead><tr><th>family</th><th>ripgrep</th><th>strict</th><th>tok/scenario</th></tr></thead>
   <tbody>
     <tr><td>efficiency</td><td class="n good">1/1 · 100%</td><td class="n">1.00</td><td class="n">664</td></tr>
-    <tr><td>polyglot</td><td class="n">3/4 · 75%</td><td class="n">1.00</td><td class="n">4,118</td></tr>
-    <tr><td>retrieval</td><td class="n">4/6 · 67%</td><td class="n">0.94</td><td class="n">14,472</td></tr>
+    <tr><td>polyglot</td><td class="n">4/5 · 80%</td><td class="n">1.00</td><td class="n">3,498</td></tr>
+    <tr><td>retrieval</td><td class="n">4/6 · 67%</td><td class="n">0.94</td><td class="n">14,534</td></tr>
     <tr><td>implementation</td><td class="n dim">— <span class="dim">(2 unscored)</span></td><td class="n dim">—</td><td class="n dim">—</td></tr>
   </tbody>
 </table></div>
@@ -160,6 +160,25 @@ while the pass rate is 70%. <strong>Every remaining failure is precision or cost
 ripgrep answers “what does this package export” by printing the whole module — full recall, every
 distractor tripped — and answers a six-line question about <code>memmem::find</code> correctly for
 38,051 tokens. That is the clearest demonstration in the repo of why recall alone is not a result.</p>
+
+<h3>One scenario had never run at all</h3>
+
+<p><code>ts/commander/public-surface</code> declined for this repository's entire history because
+<code>$NODE_MODULES</code> was unset — and the package was on this machine the whole time. Pointed
+at a real checkout it passes in 956 tokens.</p>
+
+<p>Finding it exposed a sharper problem. This machine holds commander 12.1.0 <em>and</em> 8.1.0 in
+different trees, and nothing checked which one a root actually contained: point the variable at the
+wrong copy and you get a complete run, real-looking numbers, and a comparison against code the truth
+was never written against. <code>doctor</code> now reads the version present — from
+<code>package.json</code> for npm, from the directory name for cargo and Go — and refuses:</p>
+
+<pre><code>SKEW    …/node_modules/commander
+        holds 8.1.0, but scenarios describe 12.1.0.
+        The run would produce real-looking numbers about the wrong code.</code></pre>
+
+<p>Python roots report no version rather than a guess: it lives in a sibling
+<code>.dist-info</code>, and inventing one would flag skew that is not there.</p>
 
 <h2>Does any of this reproduce?<span class="chip ok">verified</span></h2>
 
@@ -176,7 +195,8 @@ happened to land on.</p>
     <tr><td>canonical, after two new scenarios</td><td class="n">3</td><td class="n">24</td><td class="n good">100%</td></tr>
     <tr><td>canonical, all 14 scenarios</td><td class="n">3</td><td class="n">28</td><td class="n good">100%</td></tr>
     <tr><td>canonical, all 15 scenarios</td><td class="n">3</td><td class="n">30</td><td class="n good">100%</td></tr>
-    <tr><td><strong>total</strong></td><td class="n"><strong>15</strong></td><td class="n"><strong>122</strong></td><td class="n good"><strong>100%</strong></td></tr>
+    <tr><td>canonical, every root resolved</td><td class="n">3</td><td class="n">30</td><td class="n good">100%</td></tr>
+    <tr><td><strong>total</strong></td><td class="n"><strong>18</strong></td><td class="n"><strong>152</strong></td><td class="n good"><strong>100%</strong></td></tr>
   </tbody>
 </table></div>
 
@@ -252,7 +272,7 @@ kept passing ranking tests the entire time it was broken.</p>
 </ul>
 
 <div class="foot">
-  nudox-bench · every figure here is reproducible from the repository at <code>3697fc1</code>
+  nudox-bench · every figure here is reproducible from the repository at <code>1696c93</code>
   · reasoning and retractions are logged in <code>analysis/DECISIONS.md</code>
 </div>
 
