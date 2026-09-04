@@ -152,7 +152,65 @@ this command says what it costs now, per tool, largest first.
 
 ---
 
-## 4. Version skew, and `--ensure-indexed`
+## 4. `verify`: does any of this reproduce?
+
+Every claim in `docs/DESIGN.md` rests on the scoring being deterministic —
+anyone can re-run these and get the same numbers. A single report cannot
+demonstrate that. It shows whichever value that run happened to land on, and a
+verdict that quietly alternates looks exactly like one that holds.
+
+```sh
+cargo run -- verify --config configs/baselines.toml --repeat 3
+```
+
+It runs the config N times and separates two kinds of movement, because they
+are not equally serious:
+
+- **a verdict that changes is an alarm.** A published pass rate is then partly
+  luck, and no amount of averaging repairs it. `verify` exits non-zero for
+  this, so it works as a CI gate.
+- **a cost that changes is ordinary** for anything crossing a process or a
+  network. It is reported as a spread relative to its own floor, so a
+  200-token wobble on a 20,000-token answer does not read like the same event
+  as one on a 300-token answer. Tune with `--drift`.
+
+Recall that moves while the verdict holds is counted as a *failure to
+reproduce*, not a pass: the verdict survived on where the threshold happened
+to sit, which is luck wearing the same clothes as a result.
+
+`--repeat 1` is refused. One run cannot disagree with itself, and a number
+that cannot fail is not evidence.
+
+## 5. Nudox on `canonical`
+
+`canonical` replaced `workspace/nudox-engine` with a
+`compiler/ interface/ server/ heart/` layout. The MCP endpoint §2 describes
+does not exist there, so the `nudox` adapter cannot reach it — pointing it at
+canonical fails at connect and reads as an outage rather than as the truth.
+
+Use the `nudox-canonical` adapter, which speaks the application protocol that
+canonical actually ships:
+
+```sh
+cd ../Backend && cargo build -p interface-cli
+export NUDOX_CANONICAL_CLI=$PWD/target/debug/interface-cli
+cd ../nudox-bench && cargo run -- run --config configs/canonical.toml
+```
+
+Check it first — `doctor` reads the capability roll-call, not just whether the
+binary starts:
+
+```sh
+cargo run -- doctor --config configs/canonical.toml
+```
+
+At the time of writing that reports five capabilities unavailable, `index`
+among them, and every scenario comes back **unsupported** rather than scoring
+zero. The index plane under `server/index/*` is built but not wired to
+`interface-core`; there is no flag that turns it on. See
+`results/2026-09-03-canonical/`.
+
+## 6. Version skew, and `--ensure-indexed`
 
 The file-based adapters read `target.root`. Nudox answers from its corpus. If
 those hold different versions of the same package, the run measures the skew
