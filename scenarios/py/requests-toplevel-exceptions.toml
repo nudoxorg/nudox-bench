@@ -1,0 +1,40 @@
+# Verified against requests 2.34.2 on disk: `__init__.py` re-exports exactly ten
+# names from `.exceptions` (the parenthesised block at lines 172-183), while
+# `exceptions.py` defines twenty-five classes. The gap is the whole question.
+id = "py/requests/toplevel-exceptions"
+family = "polyglot"
+task = "overview"
+question = """
+Which exception and warning types can be imported directly from the top-level `requests` package, as `requests.X`, rather than only from `requests.exceptions`?"""
+
+[target]
+ecosystem = "pypi"
+package = "requests"
+version = "2.34.2"
+root = "${PY_SITE}/requests"
+
+[probe]
+query = "requests top-level exceptions"
+name = "RequestException"
+symbol = "requests.exceptions.RequestException"
+
+[truth]
+mode = "symbol_set"
+all_of = [
+  "ConnectionError", "ConnectTimeout", "FileModeWarning", "HTTPError",
+  "JSONDecodeError", "ReadTimeout", "RequestException", "Timeout",
+  "TooManyRedirects", "URLRequired",
+]
+# Defined in exceptions.py and reachable only as `requests.exceptions.X`.
+# A tool that answers by printing the module rather than the export list
+# will surface these, which is exactly the distinction being measured.
+none_of = ["ProxyError", "SSLError", "InvalidProxyURL", "StreamConsumedError"]
+
+[budget]
+max_tool_calls = 3
+token_budget = 5000
+
+notes = """
+The point of this one is precision rather than recall. `exceptions.py` defines twenty-five classes and the package re-exports ten of them; a tool that finds the module and prints it scores full recall and trips every distractor, which is the correct outcome and the reason `none_of` exists.
+
+`RequestsDependencyWarning` is deliberately in neither list. It *is* importable as `requests.RequestsDependencyWarning`, but only because `__init__.py` imports it at line 47 for its own version check rather than as part of the public surface, so counting it either way would be arguing rather than measuring."""

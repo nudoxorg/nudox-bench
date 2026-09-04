@@ -196,7 +196,7 @@ impl RipgrepAdapter {
                     "-n".into(),
                     "--no-heading".into(),
                     "-e".into(),
-                    r"^\s*(pub |export |public )".into(),
+                    exported_surface(&scenario.target.ecosystem),
                 ],
             )],
             TaskKind::Search | TaskKind::Implement => vec![(
@@ -338,6 +338,32 @@ fn matched_lines(text: &str) -> String {
         .join("\n")
 }
 
+/// What "exported" looks like, per ecosystem.
+///
+/// # Why one pattern cannot do it
+///
+/// `pub` is Rust, `export` is JavaScript, `public` is Java. Python has no
+/// export keyword at all: a package's surface is its top-level definitions
+/// plus whatever `__init__.py` re-exports. Go has no keyword either — an
+/// identifier is exported when it starts with a capital letter.
+///
+/// Grepping `pub |export |public ` against a Python package matches nothing
+/// whatsoever, so the adapter returned "(no matches)" and scored zero on a
+/// question it had never actually asked. Measured, on
+/// `py/requests/toplevel-exceptions`: 146 tokens, 0.00 recall, one call.
+/// The Rust and npm patterns are unchanged, so the existing overview
+/// scenarios score exactly as before.
+fn exported_surface(ecosystem: &str) -> String {
+    match ecosystem {
+        // Top-level definitions, an explicit `__all__`, and the relative
+        // imports an `__init__.py` uses to re-export.
+        "pypi" => r"^(class |def )|^\s*__all__|^from \.".to_owned(),
+        // Exported is spelled with a capital letter.
+        "go" => r"^(func|type|var|const) [A-Z]".to_owned(),
+        _ => r"^\s*(pub |export |public )".to_owned(),
+    }
+}
+
 /// Whether one rendered rg line is a match rather than context.
 fn is_match_line(line: &str) -> bool {
     // Find `<path><sep><digits><sep>` where <path> ends at a file extension.
@@ -439,6 +465,25 @@ mod tests {
     /// `ts/commander/public-surface` regression, pinned: the package lives
     /// *inside* `node_modules`, so excluding that directory excluded the
     /// entire package and scored 0% on 149 tokens.
+    #[test]
+    fn an_overview_pattern_can_actually_match_the_language() {
+        // Python has no export keyword, so the Rust/JS pattern matched
+        // nothing at all and the adapter scored zero on a question it never
+        // really asked. Measured before the fix: 146 tokens, 0.00 recall.
+        let python = exported_surface("pypi");
+        assert!(python.contains("class ") && python.contains("__all__"));
+        assert!(!python.contains("pub "), "the Rust pattern cannot answer for Python");
+
+        let go = exported_surface("go");
+        assert!(go.contains("[A-Z]"), "Go spells exported with a capital letter");
+
+        // Unchanged for the ecosystems that already worked, so the published
+        // overview numbers stay comparable.
+        let rust = exported_surface("crates.io");
+        assert_eq!(rust, exported_surface("npm"));
+        assert!(rust.contains("pub ") && rust.contains("export "));
+    }
+
     #[test]
     fn an_exclusion_never_swallows_the_root() {
         let args = exclude_args(Path::new("/home/x/context-bench/node_modules/commander"));
