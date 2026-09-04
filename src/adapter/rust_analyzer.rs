@@ -348,7 +348,7 @@ impl Adapter for RustAnalyzerAdapter {
         {
             Ok(value) => value,
             Err(e) => {
-                let message = format!("workspace/symbol: {e}");
+                let message = format!("workspace/symbol: {e:#}");
                 builder.step("workspace/symbol", name.clone(), &message, started.elapsed(), true);
                 return builder.finish(Some(message));
             }
@@ -421,7 +421,7 @@ impl Adapter for RustAnalyzerAdapter {
                     );
                 }
                 Err(e) => {
-                    let message = format!("textDocument/references: {e}");
+                    let message = format!("textDocument/references: {e:#}");
                     builder.step(
                         "textDocument/references",
                         params.to_string(),
