@@ -364,3 +364,26 @@ now reproduces exactly.
 a *different and shorter* published document in that same directory. Running it once would have
 overwritten a published artifact with an unrelated page. Caught by checking what was already on
 disk before trusting the name.
+
+## D29 — Measured what this session's changes did to the numbers · HOLDS
+Built the pre-session harness at `e3cd3d7` in a worktree and ran both binaries against **the same
+scenario files**, same environment, same ripgrep-only config, so code was the only variable. See
+[HARNESS-COMPARISON.md](HARNESS-COMPARISON.md).
+
+**On the ten pre-existing scenarios: every cell identical** — verdict, strict, loose, distractors,
+tokens, calls. 6/7, strict 0.95, 8,447 tok/scenario before and after. That is the correct result:
+crash fixes, a reporting column and setup checks are not supposed to move a score, and if they had,
+something would be wrong.
+
+**One change moves a number**, and it does not flatter anything. On
+`py/requests/toplevel-exceptions` the old adapter scored **0.00 recall on 146 tokens** because the
+overview search matched nothing in Python; the new one scores **1.00 with four distractors on
+5,279 tokens**. Both fail. Ripgrep is 5,133 tokens worse off and still fails — what changed is that
+the number is now true, and the failure is the real one (precision, not blindness).
+
+**Nothing in this session improves any tool's score, and nothing was meant to.**
+
+**A methodology error caught in the act:** the first comparison ran the old binary twice, because a
+`cd` persisted between the two commands. The tell was the "after" table having twelve columns where
+the new report has thirteen. Had the column not been added earlier this session, the invalid run
+would have looked like a clean result. Absolute paths, and a structural tell to check against.
