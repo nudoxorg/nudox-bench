@@ -192,7 +192,30 @@ impl Adapter for CanonicalAdapter {
         // A reply this adapter cannot parse is an error, not an absence: the
         // surface may have moved again, and reporting that as "no results"
         // would quietly turn a broken adapter into a bad score.
-        let reply: Result<Reply, _> = serde_json::from_str(&text);
+        //
+        // It is reported as *declined* rather than as a failed attempt for
+        // the same reason the unavailable branch below is. A preflight
+        // failure is only a warning, so a CLI that cannot run at all reaches
+        // here, once per scenario; scoring that as a wrong answer would say
+        // the tool answered badly when it never ran. Measured, with
+        // NUDOX_CANONICAL_CLI pointing at a path that does not exist: every
+        // scenario read `fail 0%`.
+        let reply: Result<Reply, serde_json::Error> = match serde_json::from_str(&text) {
+            Ok(reply) => Ok(reply),
+            Err(error) => {
+                let head: String = text.chars().take(160).collect();
+                return Attempt::unsupported(
+                    self.name(),
+                    scenario,
+                    format!(
+                        "`{}` did not answer with the application protocol \
+                         ({error}); it returned: {}",
+                        self.binary.display(),
+                        if head.is_empty() { "nothing" } else { head.trim() }
+                    ),
+                );
+            }
+        };
         let unavailable = match &reply {
             Ok(reply) => match &reply.body {
                 Body::DependencyUnavailable { capability } => Some(capability.clone()),
@@ -262,6 +285,32 @@ mod tests {
             .map(|fact| fact.capability)
             .collect();
         assert_eq!(down, vec!["index", "graph"]);
+    }
+
+    #[tokio::test]
+    async fn a_cli_that_cannot_run_declines_rather_than_scoring_zero() {
+        // Preflight failure is only a warning, so an unusable binary reaches
+        // `attempt` once per scenario. Scoring that as a wrong answer would
+        // report the tool as bad at a question it never saw.
+        let mut adapter = CanonicalAdapter::new(
+            "/nonexistent/interface-cli".into(),
+            "primary".to_owned(),
+            4,
+            false,
+        );
+        let scenario = crate::testing::scenario_with_truth(crate::scenario::Truth {
+            mode: crate::scenario::TruthMode::SymbolSet,
+            all_of: vec!["memchr3".to_owned()],
+            any_of: Vec::new(),
+            none_of: Vec::new(),
+            oracle: None,
+            sources: Vec::new(),
+        });
+        let attempt = adapter.attempt(&scenario).await;
+        let why = attempt.unsupported.expect("an unusable CLI declines");
+        assert!(why.contains("/nonexistent/interface-cli"), "names the binary: {why}");
+        assert!(why.contains("No such file"), "keeps the reason: {why}");
+        assert!(attempt.context.is_empty(), "nothing was answered");
     }
 
     #[test]
