@@ -474,13 +474,30 @@ impl RunReport {
                 "Scenarios an adapter could not express. Not failures — these are the \
                  shape of each tool's reach.\n\n",
             );
+            // Grouped by (adapter, reason). One unavailable capability
+            // declines every scenario for the same reason, and printing that
+            // reason twelve times buries the two lines that differ — which
+            // are the ones a reader needs.
+            let mut grouped: BTreeMap<(&str, &str), Vec<&str>> = BTreeMap::new();
             for outcome in unsupported {
+                let reason = outcome.attempt.unsupported.as_deref().unwrap_or("");
+                grouped
+                    .entry((outcome.adapter.as_str(), reason))
+                    .or_default()
+                    .push(outcome.scenario_id.as_str());
+            }
+            for ((adapter, reason), scenarios) in grouped {
+                if let [only] = scenarios[..] {
+                    out.push_str(&format!("- `{only}` / **{adapter}** — {reason}\n"));
+                    continue;
+                }
                 out.push_str(&format!(
-                    "- `{}` / **{}** — {}\n",
-                    outcome.scenario_id,
-                    outcome.adapter,
-                    outcome.attempt.unsupported.as_deref().unwrap_or("")
+                    "- **{adapter}**, {} scenarios — {reason}\n",
+                    scenarios.len()
                 ));
+                for scenario in scenarios {
+                    out.push_str(&format!("  - `{scenario}`\n"));
+                }
             }
         }
 
@@ -632,6 +649,37 @@ mod tests {
             summary.mean_strict_recall, 1.0,
             "a structurally-zero recall must not enter the mean"
         );
+    }
+
+    #[test]
+    fn one_cause_declining_everything_is_stated_once() {
+        // An unavailable capability declines every scenario identically.
+        // Printing the reason once per scenario buries whatever differs.
+        let mut a = outcome_for("a", false, true, 0);
+        let mut b = outcome_for("a", false, true, 0);
+        let mut c = outcome_for("a", false, true, 0);
+        a.scenario_id = "one".into();
+        b.scenario_id = "two".into();
+        c.scenario_id = "three".into();
+        a.attempt.unsupported = Some("index unavailable".into());
+        b.attempt.unsupported = Some("index unavailable".into());
+        c.attempt.unsupported = Some("cannot express a diff".into());
+        let report = RunReport {
+            run_id: "r".into(),
+            timestamp: "t".into(),
+            adapters: vec![AdapterInfo {
+                name: "a".into(),
+                description: String::new(),
+                resident: TokenCount::default(),
+            }],
+            outcomes: vec![a, b, c],
+        };
+        let md = report.to_markdown();
+        assert_eq!(md.matches("index unavailable").count(), 1, "said once");
+        assert!(md.contains("**a**, 2 scenarios"), "counted");
+        assert!(md.contains("  - `one`") && md.contains("  - `two`"), "still listed");
+        // The lone reason keeps the compact one-line form.
+        assert!(md.contains("- `three` / **a** — cannot express a diff"));
     }
 
     #[test]
