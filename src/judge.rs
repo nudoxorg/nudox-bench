@@ -61,9 +61,24 @@ pub struct JudgeVerdict {
 }
 
 impl JudgeVerdict {
-    /// 2-of-3 on both axes.
+    /// A strict majority of the votes cast, on both axes.
+    ///
+    /// # Why not `div_ceil`
+    ///
+    /// `div_ceil(2)` is a majority only for an odd panel. For two votes it
+    /// returns one, so a split panel — one model says yes, the other no —
+    /// resolved to a pass. Two-model panels are not hypothetical: a model
+    /// that fails to answer is dropped and the remaining two decide.
+    ///
+    /// Resolving a tie in favour of passing is the one place this repo would
+    /// have flattered a result. Everything else here refuses to: declines are
+    /// never averaged with failures, and token counts take the larger of two
+    /// vocabularies so a compactness claim cannot be flattered by tokenizer
+    /// choice. `len / 2 + 1` is a strict majority at every panel size — 2 of
+    /// 3, 2 of 2, 3 of 4 — which is what the comment on the panel loop and
+    /// the name of the test below both already claimed.
     pub fn tally(votes: Vec<Vote>) -> Self {
-        let needed = votes.len().div_ceil(2).max(1);
+        let needed = votes.len() / 2 + 1;
         let complete = votes.iter().filter(|v| v.complete).count() >= needed;
         let relevant = votes.iter().filter(|v| v.relevant).count() >= needed;
         Self {
@@ -253,10 +268,31 @@ mod tests {
 
     #[test]
     fn a_degraded_panel_still_needs_a_majority_of_those_that_voted() {
+        // A split two-model panel is a tie, and a tie is not a pass.
         let verdict = JudgeVerdict::tally(vec![vote(true, true), vote(false, false)]);
-        assert!(verdict.passed, "1 of 2 is a majority by div_ceil");
+        assert!(!verdict.passed, "1 of 2 is a tie, not a majority");
+        // Both agreeing is.
+        let verdict = JudgeVerdict::tally(vec![vote(true, true), vote(true, true)]);
+        assert!(verdict.passed);
         let verdict = JudgeVerdict::tally(vec![vote(false, false), vote(false, false)]);
         assert!(!verdict.passed);
+    }
+
+    #[test]
+    fn a_lone_surviving_model_still_decides() {
+        // One vote is a majority of one. The alternative is voiding the
+        // scenario, and `judge()` already bails when every model fails.
+        assert!(JudgeVerdict::tally(vec![vote(true, true)]).passed);
+        assert!(!JudgeVerdict::tally(vec![vote(true, false)]).passed);
+    }
+
+    #[test]
+    fn an_even_panel_needs_more_than_half() {
+        // 2 of 4 is half, not a majority.
+        let split = vec![vote(true, true), vote(true, true), vote(false, false), vote(false, false)];
+        assert!(!JudgeVerdict::tally(split).passed);
+        let three = vec![vote(true, true), vote(true, true), vote(true, true), vote(false, false)];
+        assert!(JudgeVerdict::tally(three).passed);
     }
 
     #[test]

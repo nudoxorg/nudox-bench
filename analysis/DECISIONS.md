@@ -267,3 +267,23 @@ inventing one would flag skew that is not there. `None` beats a confident wrong 
 
 **Reproducibility after all of this:** 30 cells, 3 runs, 100% — this time with commander genuinely
 scoring rather than declining. Running total **152 cells over 18 runs, nothing moved.**
+
+## D24 — A judge tie resolved as a pass · INVALID (fixed)
+`JudgeVerdict::tally` used `votes.len().div_ceil(2).max(1)`, which is a strict majority only for an
+**odd** panel. For two votes it returns one, so a split panel — one model yes, one no — passed.
+Two-model panels are not hypothetical: `judge()` drops a model that fails to answer and lets the
+remaining two decide.
+
+Three things already disagreed with the implementation: the panel loop's own comment ("a 2-of-2 is
+still a majority"), the test's name (`a_degraded_panel_still_needs_a_majority_of_those_that_voted`),
+and that test's assertion, which accepted 1-of-2 while the name demanded a majority.
+
+**Why it mattered.** Resolving a tie in favour of passing is the one place this repo would have
+flattered a result. Everything else refuses to: declines are never averaged with failures, and
+token counts take the larger of two vocabularies precisely so a compactness claim cannot be
+flattered by tokenizer choice. `len / 2 + 1` is a strict majority at every size — 2 of 3, 2 of 2,
+3 of 4.
+
+**Checked before changing scoring semantics:** the database holds 162 outcomes marked judged and
+**zero** that were ever actually scored. The judge has never run in a recorded result, so no
+published number moves.
