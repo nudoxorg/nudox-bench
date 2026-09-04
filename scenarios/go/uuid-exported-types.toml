@@ -1,0 +1,36 @@
+# Verified against google/uuid v1.6.0 on disk. Every non-test .go file was
+# scanned for `^type [A-Z]`: exactly seven, in dce.go, null.go, time.go and
+# uuid.go. The one unexported top-level type, `invalidLengthError`, is the
+# distractor.
+id = "go/uuid/exported-types"
+family = "polyglot"
+task = "overview"
+question = """
+Which types does the `github.com/google/uuid` package define as part of its exported API?"""
+
+[target]
+ecosystem = "go"
+package = "github.com/google/uuid"
+version = "v1.6.0"
+root = "${GO_MOD}/github.com/google/uuid@v1.6.0"
+
+[probe]
+query = "google uuid exported types"
+name = "UUID"
+
+[truth]
+mode = "symbol_set"
+all_of = ["UUID", "UUIDs", "Version", "Variant", "Domain", "Time", "NullUUID"]
+# Declared in uuid.go and deliberately unexported. Go spells that with a
+# lowercase initial, so a tool that understands the language's export rule
+# leaves it out and one that prints every `type` line does not.
+none_of = ["invalidLengthError"]
+
+[budget]
+max_tool_calls = 3
+token_budget = 4000
+
+notes = """
+Go has no export keyword — visibility is spelled with the case of the first letter — so this asks whether a tool models the language's own rule or just pattern-matches declarations. That is also why it is worth having: the other two overview scenarios are Rust and JavaScript, both of which mark exports with a literal keyword, so neither exercises this.
+
+`UUIDs` (the `[]UUID` slice alias) is easy to miss and is included on purpose; it is exported and part of the API."""

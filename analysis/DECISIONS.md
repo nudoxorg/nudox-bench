@@ -186,3 +186,26 @@ double encode does not spend a day on it.
 The one place time genuinely goes is rust-analyzer's index warm-up, and the harness already
 charges that as a step rather than hiding it: a tool that answers in 8 ms after 90 seconds of
 warm-up has a 90-second cost.
+
+## D20 — Two scenarios, and the adapter bug the first one found · HOLDS
+`py/requests/toplevel-exceptions` and `go/uuid/exported-types`. Every fact was verified against
+the source on disk before being written down, not recalled: requests 2.34.2 re-exports exactly ten
+of the twenty-five classes `exceptions.py` defines; google/uuid v1.6.0 declares exactly seven
+exported types across four non-test files, plus one unexported `invalidLengthError`.
+
+**What the Python one found immediately:** ripgrep's overview strategy grepped
+`^\s*(pub |export |public )` — Rust, JavaScript and Java. Python has no export keyword, so it
+matched *nothing*: 146 tokens, 0.00 recall, one call. A zero for a question the adapter had never
+actually asked. There had been no Python overview scenario, so the gap was invisible. Fixed per
+ecosystem; Rust and npm are untouched and `memchr/public-surface` still costs exactly 18,159
+tokens, so the published numbers stay comparable.
+
+**Why these two are worth having.** The Python one measures *precision*: full recall is easy, and a
+tool that answers by printing the module trips all four distractors. ripgrep now does exactly that
+— strict 1.00, four distractors, fail. The Go one asks whether a tool models Go's own export rule
+(capital first letter) rather than pattern-matching `type` lines; the other two overview scenarios
+are Rust and JavaScript, which both mark exports with a literal keyword, so neither exercised it.
+
+The suite reads 12 scenarios. ripgrep's polyglot family is now 3/4 at **strict recall 1.00** — the
+single failure is purely precision, which is the clearest demonstration in the repo of why recall
+alone is not a result.
