@@ -151,10 +151,13 @@ reproduce — the verdict survived on where the threshold sat.
 **always exits 0 and refuses to say why anything moved**: across repeats of one build it is
 flakiness, across a code change it is a changelog, and the query cannot tell. The default set is the
 last three runs, which usually spans changes, so asserting "flaky" would be wrong most of the time.
-**Measured, twice:**
+**Measured, three times:**
 - `configs/canonical.toml` (ripgrep + nudox-canonical), 3 runs: 20 cells, **100%**.
 - `configs/baselines.toml` (ripgrep + rust-analyzer), 3 runs: 20 cells, **100%**, no cost moved
   more than 5%.
+- `configs/canonical.toml` after the two new scenarios, 3 runs: 24 cells, **100%**.
+
+Running total: **64 cells over 9 runs, nothing moved.**
 
 The second is the one worth having. rust-analyzer is a stateful LSP server restarted and
 re-indexed for each run, which is exactly where a benchmark would be expected to wobble, and it
