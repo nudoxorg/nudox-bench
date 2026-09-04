@@ -519,7 +519,13 @@ async fn main() -> Result<()> {
             if scenarios.is_empty() {
                 anyhow::bail!("no scenarios matched");
             }
-            let out = std::env::temp_dir().join("nbench-verify");
+            // Unique per invocation: /tmp is shared, and two verifies running
+            // at once would otherwise read each other's reports.
+            let out = std::env::temp_dir().join(format!(
+                "nbench-verify-{}-{}",
+                std::process::id(),
+                chrono::Local::now().format("%H%M%S")
+            ));
             println!(
                 "config `{}`: {} scenario(s) x {} adapter(s), {repeat} times",
                 config.name,

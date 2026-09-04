@@ -168,3 +168,21 @@ not 0%, matching the rule the rest of the report follows.
 tool is good at. On the canonical run it splits ripgrep's 83% headline into 100% on polyglot at
 4.9k tokens and 67% on retrieval at 15.9k — three times the cost for worse accuracy, which the
 headline concealed and the per-scenario table only revealed to someone willing to tally ten rows.
+
+## D19 — The harness is not the slow part; measured, then left alone · HOLDS
+`TokenCount::measure` runs two full BPE encodes per string and throws both token vectors away
+after taking their length, which looks like an obvious thing to optimise. It is not.
+
+Measured on `configs/canonical.toml`, 20 outcomes: **wall 3,713 ms, inside the tools 3,592 ms
+(97%), harness 121 ms (3%)** — and that 3% covers all token metering, all scoring, and report
+generation. On `configs/baselines.toml` the ratio is far more lopsided still, because
+rust-analyzer's warm-up runs to minutes.
+
+**Decision: no optimisation.** Chasing 3% would trade real clarity — two vocabularies measured
+independently, `conservative()` taking the larger so no compactness claim is flattered by
+tokenizer choice — for nothing a user could perceive. Recorded so the next person to notice the
+double encode does not spend a day on it.
+
+The one place time genuinely goes is rust-analyzer's index warm-up, and the harness already
+charges that as a step rather than hiding it: a tool that answers in 8 ms after 90 seconds of
+warm-up has a 90-second cost.
