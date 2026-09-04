@@ -201,11 +201,19 @@ fn build_prompt(scenario: &Scenario, oracle: &str, context: &str) -> String {
 /// Parse a vote out of a model's reply, tolerating a fenced JSON block.
 fn parse_vote(model: &str, content: &str) -> Result<Vote> {
     let trimmed = content.trim();
-    let json_text = if let Some(start) = trimmed.find('{') {
-        let end = trimmed.rfind('}').map(|e| e + 1).unwrap_or(trimmed.len());
-        &trimmed[start..end]
-    } else {
-        trimmed
+    // The braces are located independently, so a reply whose last `}` comes
+    // *before* its first `{` — a model explaining itself in prose rather than
+    // answering — inverts the range and panics on the slice. Measured:
+    // "the object ends with } and starts with {" gives 39..22.
+    //
+    // Falling back to the whole reply is right: it fails to parse, `ask`
+    // returns an error, that model drops out of the panel, and the run
+    // continues on the models that did answer. One chatty judge must not take
+    // down a benchmark run.
+    let json_text = match (trimmed.find('{'), trimmed.rfind('}')) {
+        (Some(start), Some(end)) if end + 1 > start => &trimmed[start..end + 1],
+        (Some(start), None) => &trimmed[start..],
+        _ => trimmed,
     };
     let value: Value = serde_json::from_str(json_text)
         .with_context(|| format!("{model} did not answer with JSON: {trimmed}"))?;
@@ -293,6 +301,32 @@ mod tests {
         assert!(!JudgeVerdict::tally(split).passed);
         let three = vec![vote(true, true), vote(true, true), vote(true, true), vote(false, false)];
         assert!(JudgeVerdict::tally(three).passed);
+    }
+
+    #[test]
+    fn a_reply_with_reversed_braces_is_an_error_not_a_crash() {
+        // A model that describes JSON instead of emitting it. Locating the
+        // braces independently used to invert the slice range and panic,
+        // taking down the whole run rather than just this vote.
+        let err = parse_vote("m", "the object ends with } and starts with {")
+            .expect_err("prose is not a vote");
+        assert!(format!("{err}").contains("did not answer with JSON"));
+
+        // And the degenerate cases nearby.
+        assert!(parse_vote("m", "").is_err());
+        assert!(parse_vote("m", "{").is_err());
+        assert!(parse_vote("m", "}").is_err());
+    }
+
+    #[test]
+    fn a_vote_is_read_out_of_surrounding_prose() {
+        let vote = parse_vote(
+            "m",
+            "Sure! {\"complete\": true, \"relevant\": true, \"score\": 5} Hope that helps.",
+        )
+        .expect("parses");
+        assert!(vote.complete && vote.relevant);
+        assert_eq!(vote.score, 5);
     }
 
     #[test]

@@ -237,7 +237,7 @@ of what it found came from lines printed *around* a match.
 Both were verified against the source on disk — line numbers, occurrence counts, the doc-comment
 boundary — before anything was written down.
 
-## D22 — No latent panics outside test code; audited, not assumed · HOLDS
+## D22 — No latent panics outside test code; audited, not assumed · SUPERSEDED by D25
 After fixing the three byte-offset panics, swept the whole crate for panic-capable calls outside
 `#[cfg(test)]`. Four remain and each was checked rather than waved through:
 
@@ -287,3 +287,22 @@ flattered by tokenizer choice. `len / 2 + 1` is a strict majority at every size 
 **Checked before changing scoring semantics:** the database holds 162 outcomes marked judged and
 **zero** that were ever actually scored. The judge has never run in a recorded result, so no
 published number moves.
+
+## D25 — A fourth panic, in the one file the audit could not run · INVALID (fixed)
+D22 swept for `unwrap`/`expect`/`panic!` and found none outside test code. That sweep missed this,
+because the panic is a **slice**, not a call: `parse_vote` located `{` with `find` and `}` with
+`rfind` independently, so a reply whose last `}` precedes its first `{` inverted the range.
+Measured — `"the object ends with } and starts with {"` gives `39..22` — and it panics.
+
+Reachable, and not exotically: the judges are language models, and one that explains itself in
+prose rather than answering produces exactly this. It would have taken down the whole run, not
+just that vote.
+
+Now it falls back to the whole reply, which fails to parse, so `ask` errors, that model drops out
+of the panel, and the run continues on the models that did answer. **One chatty judge must not end
+a benchmark run.**
+
+**The lesson for the audit itself:** grepping for panic-capable *calls* is not the same as finding
+panic-capable *code*. Three of the four panics fixed this session were bare slice expressions, which
+no `unwrap` sweep would ever surface. D22's conclusion was right about what it checked and wrong
+about what it implied.
