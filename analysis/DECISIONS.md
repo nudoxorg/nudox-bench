@@ -212,3 +212,25 @@ are Rust and JavaScript, which both mark exports with a literal keyword, so neit
 The suite reads 12 scenarios. ripgrep's polyglot family is now 3/4 at **strict recall 1.00** — the
 single failure is purely precision, which is the clearest demonstration in the repo of why recall
 alone is not a result.
+
+## D21 — Covered the two task kinds nothing exercised · HOLDS
+`TaskKind` has nine variants; scenarios covered five. `Definition` and `Search` share adapter arms
+with `Signature` and `Implement`, so those paths were exercised anyway — but **`Implementors` and
+`Outbound` had no scenario at all**, which is precisely where the Python overview bug had been
+hiding.
+
+`rust/memchr/implementors-frequency-rank` turns on telling code from documentation. The
+`HeuristicFrequencyRank` doc comment carries a complete worked example — `struct Binary;` then
+`impl HeuristicFrequencyRank for Binary` — so that string is in the source and is not an
+implementation. `Binary` occurs three times in the crate and every one is inside that comment.
+ripgrep greps impl lines and returns all three: **full recall, one distractor, 347 tokens, fail.**
+The scenario measures nothing else.
+
+`rust/memchr/outbound-memmem-find` makes the cost thesis quantitative. The body is six lines and
+names everything the answer needs, so the code is not the difficulty — the identifier is. `find` is
+among the commonest names in any Rust crate and memchr defines several. ripgrep passes, at
+**38,051 tokens** for six lines of answer, with matched recall 0.33 against strict 1.00: two thirds
+of what it found came from lines printed *around* a match.
+
+Both were verified against the source on disk — line numbers, occurrence counts, the doc-comment
+boundary — before anything was written down.
