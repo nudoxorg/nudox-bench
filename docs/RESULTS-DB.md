@@ -122,3 +122,45 @@ sqlite3 results.db "
 
 A scenario that nothing has ever passed is either very hard or wrong, and it
 is worth knowing which.
+
+## The other two scripts
+
+Neither of these is part of the run loop, and both were undocumented until they
+were found by the simple expedient of running `--help` on everything shipped.
+
+### `audit_payloads.py` — where recall actually came from
+
+```sh
+python3 scripts/audit_payloads.py results/2026-09-03-expanded
+```
+
+`rg -n --no-heading` writes a matched line as `path:line:text` and a context
+line as `path-line-text`. That one character is the whole signal, and this
+script reads it: for every scored fact it says whether the fact was credited
+from a line the tool **matched** or only from one the `-B`/`-A` window dragged
+in. A fact credited only by context is recall the tool did not really produce.
+
+It is where the `matched` column came from. Auditing `run-2026-08-30-165221`
+found three ripgrep verdicts — including a pass — resting entirely on context
+lines.
+
+Its report path used to be hardcoded to one run, so it could only ever audit
+that one. It now takes any run directory.
+
+### `build_presentation.py` — rebuild the illustrated results page
+
+```sh
+python3 scripts/plot_results.py results/2026-08-30      # charts first
+python3 scripts/build_presentation.py results/2026-08-30
+```
+
+Writes `<run-dir>/presentation.html`, embedding the charts as data URIs. The
+prose is written about that specific run, so this regenerates one document
+rather than being a general report builder.
+
+It used to read a scratch file in `/tmp` that nothing here produces, so the
+published page could be read but not rebuilt. Regenerating now yields a file
+byte-identical to the committed `presentation.html`.
+
+**It does not write `protocol.html`** — that is a different, shorter document
+published from the same directory.
