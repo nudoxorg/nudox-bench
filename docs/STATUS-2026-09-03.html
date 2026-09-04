@@ -91,10 +91,10 @@
   connected to anything.</p>
   <div class="meta">
     <span><b>date</b> 2026-09-03</span>
-    <span><b>nudox-bench</b> 1696c93</span>
+    <span><b>nudox-bench</b> 718ac58</span>
     <span><b>Backend canonical</b> 2f82d74b</span>
     <span><b>scenarios</b> 15</span>
-    <span><b>tests</b> 80</span>
+    <span><b>tests</b> 86</span>
   </div>
 </div>
 
@@ -221,15 +221,19 @@ a <em>failure</em> to reproduce — the verdict survived on where the threshold 
     <tr><td><code>errored</code> never displayed</td><td class="wrap-cell">Counted since the beginning, rendered nowhere. An adapter whose endpoint dropped looked identical to one answering wrongly — the exact conflation the <code>unsupported</code> and <code>unscored</code> columns exist to prevent.</td></tr>
     <tr><td>Language-blind overview search</td><td class="wrap-cell">ripgrep grepped <code>pub |export |public </code> for “what does this package export”. Python has no export keyword, so it matched <em>nothing</em>: 146 tokens, 0.00 recall — a zero for a question never actually asked.</td></tr>
     <tr><td>Canonical adapter scored 0%</td><td class="wrap-cell">A bug introduced with the adapter itself. An unusable binary reached scoring and read as <code>fail 0%</code> rather than declining.</td></tr>
+    <tr><td>A split judge panel passed</td><td class="wrap-cell">The verdict needed <code>div_ceil(2)</code> votes, a strict majority only for an <em>odd</em> panel. A model that fails to answer is dropped, so two-model panels are routine — and one yes against one no <strong>passed</strong>. Resolving a tie toward passing was the one place this repo would have flattered a result.</td></tr>
+    <tr><td>A chatty judge crashed the run</td><td class="wrap-cell"><code>parse_vote</code> located <code>{</code> and <code>}</code> independently, so a reply whose last brace preceded its first inverted the slice and <strong>panicked</strong>. The judges are language models; one explaining itself in prose produces exactly this.</td></tr>
     <tr><td>View migration no-op</td><td class="wrap-cell">Database views were rebuilt only when a <em>column</em> changed, so a changed view definition never propagated.</td></tr>
   </tbody>
 </table></div>
 
-<p>After the panic fixes, the whole crate was swept for panic-capable calls outside test code.
-Four remain and each was checked rather than waved through — two on bundled tokenizer data, one
-provable from both branches of its own function, one whose call sites all sit inside the matching
-transport arm. The largest adapter has no <code>unwrap</code> or <code>expect</code> in non-test
-code at all.</p>
+<p>The first sweep looked for <code>unwrap</code>, <code>expect</code> and <code>panic!</code> and
+found nothing outside test code. It was the wrong search: <strong>three of the four panics fixed
+here were bare slice expressions</strong>, which no such sweep can surface. Redone over every
+<code>[a..b]</code> in the crate — thirteen sites, each checked individually — every index now
+either comes from <code>find</code> on an ASCII delimiter, routes through a character-boundary
+helper, or sits behind an explicit guard. The lesson is not to audit harder but to match the shape
+of the search to the shape of the defect.</p>
 
 <h3>What the new column found in old data</h3>
 
@@ -272,7 +276,7 @@ kept passing ranking tests the entire time it was broken.</p>
 </ul>
 
 <div class="foot">
-  nudox-bench · every figure here is reproducible from the repository at <code>1696c93</code>
+  nudox-bench · every figure here is reproducible from the repository at <code>718ac58</code>
   · reasoning and retractions are logged in <code>analysis/DECISIONS.md</code>
 </div>
 
