@@ -212,6 +212,26 @@ zero. The index plane under `server/index/*` is built but not wired to
 
 ## 6. Version skew, and `--ensure-indexed`
 
+`doctor` reads the version actually present at each package root and compares it
+with what the scenario describes:
+
+```
+ok      …/memchr-2.8.3 (2.8.3)
+SKEW    …/node_modules/commander
+        holds 8.1.0, but scenarios describe 12.1.0.
+```
+
+This matters most for `$NODE_MODULES`, which has no canonical location and is
+whatever you point it at. A machine can easily hold two copies of the same
+package — this one has commander 12.1.0 and 8.1.0 — and the wrong one produces a
+complete run, real-looking numbers, and a comparison against code the truth was
+never written against. Nothing else would notice.
+
+Cargo and Go spell the version into the directory name and npm keeps it in
+`package.json`. Python does not (it lives in a sibling `.dist-info`), so those
+roots report `ok` with no version rather than a guess.
+
+
 The file-based adapters read `target.root`. Nudox answers from its corpus. If
 those hold different versions of the same package, the run measures the skew
 rather than the tools.

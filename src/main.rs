@@ -263,6 +263,44 @@ fn unavailable_capabilities(reply: &str) -> Vec<String> {
         .collect()
 }
 
+/// The version actually present at a scenario's root, where it can be read
+/// without guessing.
+///
+/// # Why doctor checks this
+///
+/// A root is resolved from an environment variable, and nothing else confirms
+/// the code behind it is the code the scenario describes. This machine has
+/// commander 12.1.0 and commander 8.1.0 in different `node_modules`; pointing
+/// `$NODE_MODULES` at the wrong one produces a full run, real-looking numbers,
+/// and a comparison against code the truth was never written against. The
+/// failure is silent, which is what makes it worth a check.
+///
+/// Returns `None` where the version cannot be read rather than guessed at —
+/// a Python site-packages directory keeps its version in a sibling
+/// `.dist-info`, and a wrong answer here would be worse than no answer.
+fn root_version(ecosystem: &str, root: &std::path::Path) -> Option<String> {
+    match ecosystem {
+        "npm" => {
+            let text = std::fs::read_to_string(root.join("package.json")).ok()?;
+            let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+            value.get("version")?.as_str().map(str::to_owned)
+        }
+        // Both spell the version into the directory name: `memchr-2.8.3`,
+        // `uuid@v1.6.0`.
+        "crates.io" => root
+            .file_name()?
+            .to_str()?
+            .rsplit_once('-')
+            .map(|(_, version)| version.to_owned()),
+        "go" => root
+            .file_name()?
+            .to_str()?
+            .rsplit_once('@')
+            .map(|(_, version)| version.to_owned()),
+        _ => None,
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -386,7 +424,19 @@ async fn main() -> Result<()> {
                 let present = root.is_dir();
                 seen.push((rendered.clone(), present));
                 if present {
-                    println!("  ok      {rendered}");
+                    match root_version(&scenario.target.ecosystem, root) {
+                        Some(found) if found != scenario.target.version => {
+                            problems += 1;
+                            println!(
+                                "  SKEW    {rendered}\n          \
+                                 holds {found}, but scenarios describe {}. The run would \
+                                 produce real-looking numbers about the wrong code.",
+                                scenario.target.version
+                            );
+                        }
+                        Some(found) => println!("  ok      {rendered} ({found})"),
+                        None => println!("  ok      {rendered}"),
+                    }
                 } else {
                     problems += 1;
                     // An unexpanded ${VAR} survives into this message on
@@ -620,7 +670,7 @@ async fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::unavailable_capabilities;
+    use super::{root_version, unavailable_capabilities};
 
     #[test]
     fn a_health_reply_names_what_is_not_ready() {
@@ -637,6 +687,35 @@ mod tests {
         let reply = r#"{"body":{"kind":"health","facts":[
             {"capability":"index","state":"local_ready"}]}}"#;
         assert!(unavailable_capabilities(reply).is_empty());
+    }
+
+    #[test]
+    fn a_root_version_is_read_from_the_path_or_the_manifest() {
+        use std::path::Path;
+        // Cargo and Go spell the version into the directory name. A dash in
+        // the crate name must not confuse the split.
+        assert_eq!(
+            root_version("crates.io", Path::new("/x/memchr-2.8.3")).as_deref(),
+            Some("2.8.3")
+        );
+        assert_eq!(
+            root_version("crates.io", Path::new("/x/aho-corasick-1.1.4")).as_deref(),
+            Some("1.1.4")
+        );
+        assert_eq!(
+            root_version("go", Path::new("/x/uuid@v1.6.0")).as_deref(),
+            Some("v1.6.0")
+        );
+    }
+
+    #[test]
+    fn an_unreadable_version_is_none_rather_than_a_guess() {
+        use std::path::Path;
+        // Python keeps its version in a sibling .dist-info, so there is
+        // nothing to read here. Reporting a wrong version would be worse
+        // than reporting none: it would flag skew that is not there.
+        assert_eq!(root_version("pypi", Path::new("/x/requests")), None);
+        assert_eq!(root_version("npm", Path::new("/nonexistent/pkg")), None);
     }
 
     #[test]
