@@ -29,6 +29,7 @@ pub mod mcp;
 pub mod report;
 pub mod runner;
 pub mod scenario;
+pub mod text;
 pub mod tokens;
 pub mod truth;
 

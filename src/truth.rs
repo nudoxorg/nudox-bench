@@ -129,7 +129,15 @@ fn contains_word(haystack_lower: &str, needle: &str) -> bool {
         if before_ok && after_ok {
             return true;
         }
-        from = start + 1;
+        // Advance by one whole character, not one byte: `start + 1` lands
+        // inside a multi-byte character whenever the needle begins with one,
+        // and re-slicing there panics. A fact naming a non-ASCII identifier
+        // would take the whole run down mid-score.
+        from = start
+            + haystack_lower[start..]
+                .chars()
+                .next()
+                .map_or(1, char::len_utf8);
         if from >= haystack_lower.len() {
             break;
         }
@@ -334,6 +342,17 @@ mod tests {
         // The classic text-search false positive this benchmark must not reward.
         assert_eq!(tiers("memchr", "pub fn memchr3(...)"), MatchTier::Absent);
         assert_eq!(tiers("memchr", "pub fn memchr(...)"), MatchTier::Strict);
+    }
+
+    #[test]
+    fn a_non_ascii_fact_does_not_panic_the_run() {
+        // The first `é` is preceded by an identifier byte, so it is not a
+        // word match and the search advances past it. Advancing by one byte
+        // used to split the character and panic, taking the whole run down.
+        assert!(contains_word("xé foo é", "é"));
+        assert!(!contains_word("xé foo", "é"));
+        // A multi-byte identifier still matches on its own boundaries.
+        assert_eq!(tiers("café", "let café = 1;"), MatchTier::Strict);
     }
 
     #[test]

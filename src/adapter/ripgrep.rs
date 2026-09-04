@@ -282,10 +282,13 @@ impl Adapter for RipgrepAdapter {
                     let mut stdout = String::from_utf8_lossy(&out.stdout).into_owned();
                     let truncated = stdout.len() > MAX_OUTPUT_BYTES;
                     if truncated {
-                        // Cut on a line boundary so the transcript stays readable.
-                        let cut = stdout[..MAX_OUTPUT_BYTES]
-                            .rfind('\n')
-                            .unwrap_or(MAX_OUTPUT_BYTES);
+                        // Cut on a line boundary so the transcript stays
+                        // readable, and on a character boundary so cutting is
+                        // possible at all: source text is full of multi-byte
+                        // characters and both the slice and the truncate
+                        // below panic in the middle of one.
+                        let limit = crate::text::floor_char_boundary(&stdout, MAX_OUTPUT_BYTES);
+                        let cut = stdout[..limit].rfind('\n').unwrap_or(limit);
                         stdout.truncate(cut);
                         stdout.push_str(&format!(
                             "\n… output truncated at {MAX_OUTPUT_BYTES} bytes; \

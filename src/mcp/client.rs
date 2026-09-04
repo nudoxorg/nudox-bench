@@ -465,7 +465,9 @@ fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
         s.to_owned()
     } else {
-        format!("{}…", &s[..max])
+        // `max` is a byte budget and the text is whatever a tool returned,
+        // so the cut has to be walked back to a character boundary first.
+        format!("{}…", &s[..crate::text::floor_char_boundary(s, max)])
     }
 }
 
