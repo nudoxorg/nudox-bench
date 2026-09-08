@@ -1,0 +1,518 @@
+<title>Zero Is Not a Score</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+
+<style>
+  /* ---- tokens: light is the base; both dark states re-declare the same names ---- */
+  :root{
+    --paper:#f3f5f8; --panel:#ffffff; --panel-2:#f8fafc;
+    --ink:#12161d; --ink-2:#48505c; --ink-3:#78818f;
+    --rule:#d6dce4; --rule-soft:#e6eaf0;
+    --accent:#1c4f8f; --accent-soft:#e8eef7;
+    --ok:#1f6b4a; --ok-bg:#e6f2ec;
+    --warn:#8a5a12; --warn-bg:#f7efe1;
+    --stop:#96301f; --stop-bg:#f8e9e6;
+    /* chart series — validated: light-mode CVD ΔE 22.9 protan / 24.6 normal */
+    --s1:#3372bb; --s2:#a06a17;
+    --grid:#e2e7ee;
+    --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
+    --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --paper:#0e1116; --panel:#151a21; --panel-2:#1a2029;
+      --ink:#e7ebf2; --ink-2:#a9b2c0; --ink-3:#7d8695;
+      --rule:#2a323d; --rule-soft:#212832;
+      --accent:#7fa9e0; --accent-soft:#18222f;
+      --ok:#6fc79b; --ok-bg:#14291f;
+      --warn:#d8a75a; --warn-bg:#2b2315;
+      --stop:#e59183; --stop-bg:#2d1a17;
+      /* validated for dark surface: ΔE 23.4 protan / 24.8 normal */
+      --s1:#4a8fd6; --s2:#b8862c;
+      --grid:#28303a;
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#0e1116; --panel:#151a21; --panel-2:#1a2029;
+    --ink:#e7ebf2; --ink-2:#a9b2c0; --ink-3:#7d8695;
+    --rule:#2a323d; --rule-soft:#212832;
+    --accent:#7fa9e0; --accent-soft:#18222f;
+    --ok:#6fc79b; --ok-bg:#14291f;
+    --warn:#d8a75a; --warn-bg:#2b2315;
+    --stop:#e59183; --stop-bg:#2d1a17;
+    --s1:#4a8fd6; --s2:#b8862c;
+    --grid:#28303a;
+  }
+
+  body{background:var(--paper); color:var(--ink); font-family:var(--serif);
+       font-size:17px; line-height:1.62; -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:80ch; margin:0 auto; padding:3.5rem 1.5rem 5rem;
+        display:flex; flex-direction:column; gap:0;}
+  @media(max-width:640px){ .wrap{padding:2.2rem 1.05rem 3.5rem;} body{font-size:16px;} }
+
+  /* ---- masthead ---- */
+  .mast{border-top:3px solid var(--ink); padding-top:1rem; margin-bottom:2.6rem;}
+  .eyebrow{font-family:var(--mono); font-size:.72rem; letter-spacing:.14em;
+           text-transform:uppercase; color:var(--ink-3); margin:0 0 .9rem;}
+  h1{font-family:var(--sans); font-weight:700; font-size:2.45rem; line-height:1.08;
+     letter-spacing:-.028em; margin:0 0 .6rem; text-wrap:balance;}
+  @media(max-width:640px){ h1{font-size:1.95rem;} }
+  .standfirst{color:var(--ink-2); font-size:1.14rem; margin:0 0 1.6rem;
+              max-width:60ch; text-wrap:pretty;}
+  .meta{display:flex; flex-wrap:wrap; gap:.45rem 1.5rem; font-family:var(--mono);
+        font-size:.74rem; color:var(--ink-3);
+        border-top:1px solid var(--rule-soft); padding-top:.85rem;}
+  .meta b{font-weight:500; color:var(--ink-2);}
+
+  h2{font-family:var(--sans); font-weight:600; font-size:1.38rem; letter-spacing:-.012em;
+     margin:3rem 0 .15rem; text-wrap:balance;}
+  h3{font-family:var(--sans); font-weight:600; font-size:1.02rem; margin:1.9rem 0 .35rem;}
+  p{margin:.8rem 0;}
+  .lede{color:var(--ink-2);}
+  a{color:var(--accent);}
+  a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+  strong{font-weight:600;}
+
+  /* ---- state chips: encode a state, never decoration ---- */
+  .chip{display:inline-block; font-family:var(--sans); font-size:.66rem; font-weight:600;
+        letter-spacing:.1em; text-transform:uppercase; padding:.22rem .5rem;
+        border-radius:3px; vertical-align:.24em; margin-left:.55rem;}
+  .chip.stop{background:var(--stop-bg); color:var(--stop);}
+  .chip.ok{background:var(--ok-bg); color:var(--ok);}
+  .chip.warn{background:var(--warn-bg); color:var(--warn);}
+
+  code,.num{font-family:var(--mono); font-size:.88em;}
+  code{background:var(--accent-soft); padding:.1em .34em; border-radius:3px; color:var(--ink);}
+
+  /* ---- the law strip: D-numbers are the repo's real decision ids ---- */
+  .law{display:grid; grid-template-columns:auto 1fr; gap:.15rem 1rem;
+       align-items:baseline; margin:2.8rem 0 .2rem;
+       border-top:1px solid var(--rule); padding-top:1.1rem;}
+  .law .did{font-family:var(--mono); font-size:.78rem; font-weight:500;
+            color:var(--accent); letter-spacing:.02em;}
+  .law h2{margin:0; grid-column:2;}
+  .law .did{grid-column:1; grid-row:1;}
+  .law p{grid-column:2; margin:.45rem 0 0;}
+
+  /* ---- tables: everything measured is mono ---- */
+  .tablewrap{overflow-x:auto; margin:1.3rem 0; border:1px solid var(--rule);
+             border-radius:4px; background:var(--panel);}
+  table{border-collapse:collapse; width:100%; font-family:var(--mono); font-size:.79rem;}
+  th{text-align:left; font-family:var(--sans); font-weight:600; font-size:.7rem;
+     letter-spacing:.05em; text-transform:uppercase; color:var(--ink-2);
+     padding:.68rem .8rem; border-bottom:1px solid var(--rule); white-space:nowrap;}
+  td{padding:.58rem .8rem; border-bottom:1px solid var(--rule-soft); white-space:nowrap;}
+  tr:last-child td{border-bottom:0;}
+  td.n,th.n{text-align:right; font-variant-numeric:tabular-nums;}
+  td.wrap-cell{white-space:normal; font-family:var(--serif); font-size:.95rem; min-width:20ch;}
+  .dim{color:var(--ink-3);} .good{color:var(--ok);} .bad{color:var(--stop);}
+  tr.total td{border-top:1px solid var(--rule); font-weight:600;}
+
+  pre{background:var(--panel); border:1px solid var(--rule);
+      border-left:3px solid var(--accent); border-radius:4px; padding:.85rem 1rem;
+      overflow-x:auto; font-family:var(--mono); font-size:.77rem; line-height:1.5;
+      margin:1.2rem 0;}
+  pre code{background:none; padding:0; font-size:inherit;}
+  blockquote{margin:1.3rem 0; padding:.1rem 0 .1rem 1.05rem;
+             border-left:2px solid var(--accent); color:var(--ink-2); font-style:italic;}
+  ul{padding-left:1.1rem; margin:.8rem 0;} li{margin:.38rem 0;}
+
+  /* ---- figures ---- */
+  figure{margin:1.6rem 0; padding:1.15rem 1.15rem 1rem; background:var(--panel);
+         border:1px solid var(--rule); border-radius:4px;}
+  figcaption{font-family:var(--sans); font-size:.78rem; color:var(--ink-2);
+             margin-top:.85rem; line-height:1.5;}
+  .figtitle{font-family:var(--sans); font-weight:600; font-size:.92rem;
+            margin:0 0 .15rem; color:var(--ink);}
+  .figsub{font-family:var(--sans); font-size:.76rem; color:var(--ink-3); margin:0 0 .9rem;}
+  .legend{display:flex; flex-wrap:wrap; gap:.4rem 1.1rem; font-family:var(--sans);
+          font-size:.74rem; color:var(--ink-2); margin:0 0 .85rem;}
+  .legend span{display:inline-flex; align-items:center; gap:.38rem;}
+  .swatch{width:10px; height:10px; border-radius:2px; display:inline-block;}
+  svg{display:block; width:100%; height:auto;}
+  svg text{font-family:"IBM Plex Mono",ui-monospace,monospace;}
+
+  .callout{background:var(--panel-2); border:1px solid var(--rule); border-radius:4px;
+           padding:1rem 1.15rem; margin:1.5rem 0;}
+  .callout p{margin:.35rem 0;}
+  .callout .k{font-family:var(--sans); font-weight:600; font-size:.72rem;
+              letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3);
+              display:block; margin-bottom:.3rem;}
+
+  .foot{margin-top:3.2rem; padding-top:1.1rem; border-top:1px solid var(--rule);
+        font-family:var(--sans); font-size:.8rem; color:var(--ink-3);}
+  hr{border:0; border-top:1px solid var(--rule); margin:2.8rem 0;}
+  @media (prefers-reduced-motion:reduce){ *{animation:none !important; transition:none !important;} }
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <p class="eyebrow">nudox-bench · canonical readout · 2026-09-07</p>
+    <h1>Zero Is Not a Score</h1>
+    <p class="standfirst">A benchmark for code-intelligence tools, and what it reports
+      when the tool under test cannot answer the question at all. Today it reports
+      nothing about Nudox — deliberately, and that is the result worth publishing.</p>
+    <div class="meta">
+      <span><b>harness</b> 9ca0328</span>
+      <span><b>Backend canonical</b> c6fff26b3</span>
+      <span><b>scenarios</b> 15</span>
+      <span><b>adapters</b> 2</span>
+      <span><b>cells verified</b> 182 / 182</span>
+    </div>
+  </header>
+
+  <p class="lede">Most benchmarks answer one question: which tool scored higher. This one
+    spends most of its effort on a prior question — whether the number it is about to
+    publish means what it appears to mean. Four days of that discipline produced a
+    headline no marketing department would choose, and a measuring instrument you can
+    check.</p>
+
+  <h2>The state today<span class="chip stop">blocked</span></h2>
+
+  <p>Every retrieval action on <code>canonical</code> answers the same way, and the
+    benchmark records it as <em>unsupported</em> rather than wrong:</p>
+
+<pre><code>$ interface-cli search 5 primary memchr3 4
+{"correlation":5,
+ "body":{"kind":"dependency_unavailable","capability":"index"},
+ "terminal":{"kind":"degraded","emitted":0,"unavailable":"index"}}</code></pre>
+
+  <p>This was re-measured today against a canonical that has advanced <strong>465
+    commits</strong> since the last readout — the bulk of them <code>feat(index)</code>.
+    The architecture moved underneath the finding, and the finding did not move. All
+    three facts were re-checked against the new revision:</p>
+
+  <div class="tablewrap">
+  <table>
+    <thead><tr>
+      <th>Fact</th><th>At 2f82d74b</th><th>At c6fff26b3</th><th>Effect</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td><code>ApplicationService</code></td>
+        <td class="dim">compiler only</td>
+        <td class="good">+ Retrieval param</td>
+        <td class="wrap-cell">A slot an index could occupy now exists.</td>
+      </tr>
+      <tr>
+        <td><code>interface-core</code> deps</td>
+        <td class="dim">no server-index-*</td>
+        <td class="good">server-index-core</td>
+        <td class="wrap-cell">The dependency boundary opened.</td>
+      </tr>
+      <tr>
+        <td><code>server-index-retrieval</code></td>
+        <td class="dim">0 consumers</td>
+        <td class="good">1 — interface/protocol</td>
+        <td class="wrap-cell">No longer orphaned.</td>
+      </tr>
+      <tr>
+        <td><code>RetrievalCapability</code> impls</td>
+        <td class="dim">—</td>
+        <td class="bad">UnavailableRetrieval only</td>
+        <td class="wrap-cell">The one production impl declines. The only other is a test double.</td>
+      </tr>
+      <tr>
+        <td><code>interface-cli</code> construction</td>
+        <td class="dim">::new()</td>
+        <td class="bad">::new()</td>
+        <td class="wrap-cell">Still routes through <code>with_compiler</code>, which hardcodes the unavailable default.</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>So the plumbing is now roughed in and nothing is connected to it. One capability did
+    come online — the roll-call gained <code>compiler_registry: local_ready</code>, which
+    did not exist in the previous run at all — while <code>index</code>,
+    <code>graph</code> and <code>vector</code> all still report
+    <code>unavailable</code>.</p>
+
+  <h2>The readout</h2>
+
+  <p>Fifteen scenarios, two adapters. Read the middle columns, not the first.</p>
+
+  <div class="tablewrap">
+  <table>
+    <thead><tr>
+      <th>Adapter</th><th class="n">Pass</th><th class="n">Attempted</th>
+      <th class="n">Unsup.</th><th class="n">Unscored</th><th class="n">Errored</th>
+      <th class="n">Strict</th><th class="n">Matched</th><th class="n">Tok/scenario</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td>nudox-canonical</td><td class="n">0/0</td><td class="n">0</td>
+        <td class="n bad">15</td><td class="n">0</td><td class="n">0</td>
+        <td class="n dim">—</td><td class="n dim">—</td><td class="n dim">—</td>
+      </tr>
+      <tr>
+        <td>ripgrep</td><td class="n">9/12 · 75%</td><td class="n">12</td>
+        <td class="n">1</td><td class="n">2</td><td class="n">0</td>
+        <td class="n">0.97</td><td class="n">0.61</td><td class="n">8,740</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout">
+    <span class="k">Why the first column is empty, not zero</span>
+    <p><code>0/0</code> is not a score of zero. Every scenario came back unsupported —
+      the adapter could not ask the question at all — and the harness keeps that
+      permanently separate from a wrong answer. Averaging the two would publish
+      <em>“Nudox 0%”</em>, which would be both damning and false.</p>
+  </div>
+
+  <h2>What the numbers say about the tool that <em>can</em> answer</h2>
+
+  <p>ripgrep is here as a floor: the retrieval an agent already has without any index at
+    all. Its pass rate is 75%. Its <em>strict recall</em> — did the required fact appear,
+    fully qualified, anywhere in what came back — is 0.97. Those two numbers disagreeing
+    is the whole point of splitting them.</p>
+
+  <figure>
+    <p class="figtitle">Verdict versus recall, by family</p>
+    <p class="figsub">Every remaining failure is precision or cost, not finding.</p>
+    <div class="legend">
+      <span><i class="swatch" style="background:var(--s1)"></i>Pass rate</span>
+      <span><i class="swatch" style="background:var(--s2)"></i>Strict recall</span>
+    </div>
+    <svg viewBox="0 0 620 232" role="img" aria-label="Grouped bar chart. Efficiency: pass rate 100 percent, strict recall 1.00. Polyglot: pass 80 percent, strict 1.00. Retrieval: pass 67 percent, strict 0.94. All families: pass 75 percent, strict 0.97.">
+      <!-- gridlines at 0,25,50,75,100 -->
+      <g stroke="var(--grid)" stroke-width="1">
+        <line x1="132" y1="16" x2="132" y2="196"></line>
+        <line x1="235" y1="16" x2="235" y2="196"></line>
+        <line x1="338" y1="16" x2="338" y2="196"></line>
+        <line x1="441" y1="16" x2="441" y2="196"></line>
+        <line x1="544" y1="16" x2="544" y2="196"></line>
+      </g>
+
+      <!-- efficiency -->
+      <text x="124" y="35" text-anchor="end" font-size="11" fill="var(--ink-2)">efficiency</text>
+      <rect x="132" y="24" width="412" height="9" rx="4" fill="var(--s1)"></rect>
+      <text x="552" y="32" font-size="10.5" fill="var(--ink-2)">100%</text>
+      <rect x="132" y="35" width="412" height="9" rx="4" fill="var(--s2)"></rect>
+      <text x="552" y="43" font-size="10.5" fill="var(--ink-2)">1.00</text>
+
+      <!-- polyglot -->
+      <text x="124" y="79" text-anchor="end" font-size="11" fill="var(--ink-2)">polyglot</text>
+      <rect x="132" y="68" width="330" height="9" rx="4" fill="var(--s1)"></rect>
+      <text x="470" y="76" font-size="10.5" fill="var(--ink-2)">80%</text>
+      <rect x="132" y="79" width="412" height="9" rx="4" fill="var(--s2)"></rect>
+      <text x="552" y="87" font-size="10.5" fill="var(--ink-2)">1.00</text>
+
+      <!-- retrieval -->
+      <text x="124" y="123" text-anchor="end" font-size="11" fill="var(--ink-2)">retrieval</text>
+      <rect x="132" y="112" width="276" height="9" rx="4" fill="var(--s1)"></rect>
+      <text x="416" y="120" font-size="10.5" fill="var(--ink-2)">67%</text>
+      <rect x="132" y="123" width="387" height="9" rx="4" fill="var(--s2)"></rect>
+      <text x="527" y="131" font-size="10.5" fill="var(--ink-2)">0.94</text>
+
+      <!-- all -->
+      <text x="124" y="167" text-anchor="end" font-size="11" fill="var(--ink)" font-weight="500">all families</text>
+      <rect x="132" y="156" width="309" height="9" rx="4" fill="var(--s1)"></rect>
+      <text x="449" y="164" font-size="10.5" fill="var(--ink-2)">75%</text>
+      <rect x="132" y="167" width="400" height="9" rx="4" fill="var(--s2)"></rect>
+      <text x="540" y="175" font-size="10.5" fill="var(--ink-2)">0.97</text>
+
+      <!-- axis -->
+      <line x1="132" y1="196" x2="544" y2="196" stroke="var(--rule)" stroke-width="1"></line>
+      <text x="132" y="212" font-size="10" fill="var(--ink-3)" text-anchor="middle">0</text>
+      <text x="235" y="212" font-size="10" fill="var(--ink-3)" text-anchor="middle">25</text>
+      <text x="338" y="212" font-size="10" fill="var(--ink-3)" text-anchor="middle">50</text>
+      <text x="441" y="212" font-size="10" fill="var(--ink-3)" text-anchor="middle">75</text>
+      <text x="544" y="212" font-size="10" fill="var(--ink-3)" text-anchor="middle">100</text>
+      <text x="338" y="228" font-size="9.5" fill="var(--ink-3)" text-anchor="middle" letter-spacing="0.08em">PERCENT / RECALL ×100</text>
+    </svg>
+    <figcaption>The <code>implementation</code> family is absent because both its
+      scenarios are judged by a model, and no judge key was set — they report
+      <em>unscored</em>, which is not a failure and is never averaged in.</figcaption>
+  </figure>
+
+  <h2>The instrument's five rules</h2>
+
+  <p class="lede">Each is a numbered entry in the repository's decision log, with the
+    reasoning and — where it applies — the retraction attached.</p>
+
+  <div class="law">
+    <span class="did">D15</span>
+    <h2>Unsupported is not failure</h2>
+    <p>A tool that cannot express a question has told you something real about its reach,
+      and something entirely different from answering wrongly. They occupy separate
+      columns and are never merged. The canonical adapter was itself found guilty of
+      breaking this rule — an unusable binary reached scoring and read as
+      <em>fail 0%</em> — and was fixed to decline instead.</p>
+  </div>
+
+  <div class="law">
+    <span class="did">D7</span>
+    <h2>Recall is split by provenance</h2>
+    <p>Three recall numbers, not one. <code>loose</code> counts a fact found as a bare
+      identifier anywhere in the reply; <code>strict</code> requires it fully qualified;
+      <code>matched</code> counts only facts on a line the tool actually
+      <em>matched</em>, rather than ones it printed in the window around a match.</p>
+  </div>
+
+  <figure>
+    <p class="figtitle">Where ripgrep's apparent recall comes from</p>
+    <p class="figsub">Same run, same facts, three definitions of “found”.</p>
+    <svg viewBox="0 0 620 176" role="img" aria-label="Bar chart of three recall measures for ripgrep: loose 1.00, strict 0.97, matched 0.61.">
+      <g stroke="var(--grid)" stroke-width="1">
+        <line x1="118" y1="14" x2="118" y2="128"></line>
+        <line x1="224" y1="14" x2="224" y2="128"></line>
+        <line x1="330" y1="14" x2="330" y2="128"></line>
+        <line x1="436" y1="14" x2="436" y2="128"></line>
+        <line x1="542" y1="14" x2="542" y2="128"></line>
+      </g>
+
+      <text x="110" y="34" text-anchor="end" font-size="11" fill="var(--ink-2)">loose</text>
+      <rect x="118" y="24" width="424" height="14" rx="4" fill="var(--s1)" opacity="0.45"></rect>
+      <text x="550" y="35" font-size="11" fill="var(--ink-2)">1.00</text>
+
+      <text x="110" y="70" text-anchor="end" font-size="11" fill="var(--ink-2)">strict</text>
+      <rect x="118" y="60" width="411" height="14" rx="4" fill="var(--s1)" opacity="0.75"></rect>
+      <text x="537" y="71" font-size="11" fill="var(--ink-2)">0.97</text>
+
+      <text x="110" y="106" text-anchor="end" font-size="11" fill="var(--ink)" font-weight="500">matched</text>
+      <rect x="118" y="96" width="259" height="14" rx="4" fill="var(--s1)"></rect>
+      <text x="385" y="107" font-size="11" fill="var(--ink)" font-weight="500">0.61</text>
+
+      <line x1="118" y1="128" x2="542" y2="128" stroke="var(--rule)" stroke-width="1"></line>
+      <text x="118" y="144" font-size="10" fill="var(--ink-3)" text-anchor="middle">0</text>
+      <text x="224" y="144" font-size="10" fill="var(--ink-3)" text-anchor="middle">0.25</text>
+      <text x="330" y="144" font-size="10" fill="var(--ink-3)" text-anchor="middle">0.50</text>
+      <text x="436" y="144" font-size="10" fill="var(--ink-3)" text-anchor="middle">0.75</text>
+      <text x="542" y="144" font-size="10" fill="var(--ink-3)" text-anchor="middle">1.00</text>
+      <text x="330" y="164" font-size="9.5" fill="var(--ink-3)" text-anchor="middle" letter-spacing="0.08em">RECALL</text>
+    </svg>
+    <figcaption>Thirty-six points of apparent recall were <em>surrounded, not found</em> —
+      text ripgrep printed in the context window around a hit rather than text it matched.
+      A single recall number would have reported 0.97 and called it a win. This split has
+      already caught one scenario passing for the wrong reason: the tool fetched a
+      same-named struct instead of the function asked about, and only
+      <code>matched</code> could see it.</figcaption>
+  </figure>
+
+  <div class="law">
+    <span class="did">D10</span>
+    <h2>Predictions are written down before the run</h2>
+    <p>Six predictions were committed to the repository ahead of the measurement that
+      would test them. Four held. Two did not, and both are published with the reasoning
+      that produced them. The falsified cost estimate is the useful one: it revealed that
+      the dominant expense was never the thing being optimised — a single 21,276-token
+      graph enumeration, not documentation text — which redirected the next round of work.</p>
+  </div>
+
+  <div class="law">
+    <span class="did">D17</span>
+    <h2>A result that does not reproduce is not a result</h2>
+    <p>Scoring is deterministic, so anyone can re-run these and get the same numbers.
+      That sentence carries every other claim, so it is measured rather than asserted.
+      A verdict that changes is an alarm — a published pass rate would then be partly
+      luck. A cost that changes is ordinary for anything crossing a process boundary and
+      is reported as a spread against its own floor.</p>
+  </div>
+
+  <div class="tablewrap">
+  <table>
+    <thead><tr>
+      <th>Configuration</th><th class="n">Runs</th><th class="n">Cells</th><th class="n">Reproduced</th>
+    </tr></thead>
+    <tbody>
+      <tr><td>canonical (ripgrep + nudox-canonical)</td><td class="n">3</td><td class="n">20</td><td class="n good">100%</td></tr>
+      <tr><td>baselines (ripgrep + rust-analyzer)</td><td class="n">3</td><td class="n">20</td><td class="n good">100%</td></tr>
+      <tr><td>canonical, after two new scenarios</td><td class="n">3</td><td class="n">24</td><td class="n good">100%</td></tr>
+      <tr><td>canonical, all 14 scenarios</td><td class="n">3</td><td class="n">28</td><td class="n good">100%</td></tr>
+      <tr><td>canonical, all 15 scenarios</td><td class="n">3</td><td class="n">30</td><td class="n good">100%</td></tr>
+      <tr><td>canonical, every root resolved</td><td class="n">3</td><td class="n">30</td><td class="n good">100%</td></tr>
+      <tr><td>canonical @ c6fff26b3 — today</td><td class="n">3</td><td class="n">30</td><td class="n good">100%</td></tr>
+      <tr class="total"><td>total</td><td class="n">21</td><td class="n">182</td><td class="n good">100%</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>The second row is the one worth having: <code>rust-analyzer</code> is a stateful LSP
+    server, restarted and re-indexed for every run — precisely where a benchmark would be
+    expected to wobble — and no verdict moved.</p>
+
+  <div class="callout">
+    <span class="k">Today's stronger test — reproduction across four days and 465 commits</span>
+    <p>The run above was not a repeat of a stored configuration. It used a
+      <strong>freshly compiled harness</strong>, a <strong>freshly built CLI from a
+      465-commit-newer canonical</strong>, on a different day. Every verdict, every recall
+      figure, the distractor count and the strict-versus-matched gap came back
+      <strong>identical</strong> to 2026-09-03.</p>
+    <p>The only movement anywhere in the report was cost: one scenario at
+      <span class="num">37,744 → 37,190</span> tokens (−1.5%), moving the overall mean
+      <span class="num">8,780 → 8,740</span> (−0.46%). That is the spread the design
+      predicts for cost and forbids for verdicts.</p>
+  </div>
+
+  <div class="law">
+    <span class="did">D11 · D22</span>
+    <h2>Retractions are published, not quietly amended</h2>
+    <p>The decision log carries its own failures. A patch that fixed a real ranking defect
+      is marked <em>INVALID</em> because the crate it modified no longer exists — while
+      the finding it rested on is kept, restated as a constraint on any future
+      implementation. An audit that swept for <code>unwrap</code> and
+      <code>panic!</code> and reported the code clean is marked
+      <em>SUPERSEDED</em>: three of the four panics later found were bare slice
+      expressions, which no such sweep could ever surface. The lesson recorded is not to
+      audit harder but to match the shape of the search to the shape of the defect.</p>
+  </div>
+
+  <hr>
+
+  <h2>What was actually wrong, and got fixed</h2>
+
+  <p>Six defects, each verified against the real code path before being touched rather
+    than argued from reading:</p>
+
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Defect</th><th>Why it mattered</th></tr></thead>
+    <tbody>
+      <tr><td>Three byte-offset cuts</td><td class="wrap-cell">Size limits are byte counts applied to source text full of multi-byte characters. A cut splitting a character took down the whole run.</td></tr>
+      <tr><td><code>errored</code> never displayed</td><td class="wrap-cell">Counted from the beginning, rendered nowhere. A tool whose endpoint dropped looked identical to one answering wrongly.</td></tr>
+      <tr><td>Language-blind overview search</td><td class="wrap-cell">Grepping <code>pub |export |public </code> matches nothing in Python — scoring 0.00 for a question never actually asked.</td></tr>
+      <tr><td>Canonical adapter scored 0%</td><td class="wrap-cell">An unusable binary reached scoring instead of declining.</td></tr>
+      <tr><td>A split judge panel passed</td><td class="wrap-cell">A strict majority only for an odd panel, so one yes against one no passed — the single place this repo would have flattered a result.</td></tr>
+      <tr><td>A chatty judge crashed the run</td><td class="wrap-cell">Brace positions located independently, so a reply whose last brace preceded its first inverted the slice and panicked.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>Then the fixes were themselves measured. The pre-change harness was rebuilt and run
+    against byte-identical scenario files, and all ten pre-existing cells came back
+    identical on verdict, recall, distractors, cost and calls. <strong>That is the correct
+    result</strong> — crash fixes and reporting columns are not supposed to move a score.
+    The one number that did move belonged to the Python fix, and it made ripgrep look
+    <em>worse</em>: 5,133 more tokens spent, same failure. What changed is that the number
+    became true.</p>
+
+  <h2>What would change this page</h2>
+
+  <ul>
+    <li><strong>Binding a real <code>RetrievalCapability</code> and constructing the
+      service with it.</strong> The benchmark adapter needs no change — it returns real
+      attempts the moment <code>index</code> reports ready, and the ripgrep column above
+      is a same-day baseline for that comparison to be read against.</li>
+    <li><strong>A judge key</strong>, which moves the two <code>implementation</code>
+      scenarios out of <em>unscored</em> and completes the family table.</li>
+    <li><strong>A token with workflow scope</strong>, so continuous integration can gate
+      on reproducibility rather than it being run by hand.</li>
+  </ul>
+
+  <blockquote>The instrument is finished before the thing it measures is. That is an
+    uncomfortable place to publish from and the right order to build in — when the index
+    is wired, the first number it produces will already be trustworthy.</blockquote>
+
+  <p class="foot">nudox-bench · every figure on this page is reproducible from the
+    repository at <span class="num">9ca0328</span> against Backend canonical
+    <span class="num">c6fff26b3</span> · reasoning and retractions are logged in
+    <span class="num">analysis/DECISIONS.md</span> · anything measured is set in mono,
+    anything argued in serif</p>
+
+</div>

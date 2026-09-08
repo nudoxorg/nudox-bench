@@ -387,3 +387,32 @@ the number is now true, and the failure is the real one (precision, not blindnes
 `cd` persisted between the two commands. The tell was the "after" table having twelve columns where
 the new report has thirteen. Had the column not been added earlier this session, the invalid run
 would have looked like a clean result. Absolute paths, and a structural tell to check against.
+
+## D30 — Re-measured against a 465-commit-newer canonical · HOLDS
+`canonical` moved `2f82d74b` → `c6fff26b3`, mostly `feat(index)`. Rebuilt `interface-cli` from a
+detached worktree of that revision and re-ran the full suite. See
+[../results/2026-09-07-canonical/](../results/2026-09-07-canonical/).
+
+**The conclusion did not move: 15 scenarios, all `unsupported`.** The three facts the status page
+rested on have each changed and none of them unblocks anything. `ApplicationService` gained a
+`Retrieval` type parameter, `interface-core` now declares `server-index-core`, and
+`server-index-retrieval` has its first consumer — but the only production `RetrievalCapability` impl
+is `UnavailableRetrieval` (the other is a test double under `tests/`), and `interface/cli/main.rs:33`
+still calls `ApplicationService::new()`, which routes through `with_compiler` and hardcodes the
+unavailable default. Verified empirically, not just read: a clean build still answers
+`dependency_unavailable(index)` with `emitted: 0`.
+
+**One capability came online.** The health roll-call gained `compiler_registry: local_ready`, absent
+from the previous run entirely. `index`, `graph`, `vector` unchanged.
+
+**The run is worth more as a reproduction than as a measurement.** `verify --repeat 3` shows a stored
+configuration repeats within one session. This shows something stronger and previously unmeasured: a
+**freshly compiled harness** and a **freshly built CLI from a 465-commit-newer Backend**, four days
+later, reproduce every verdict, every recall figure, the distractor count and the strict/matched gap
+**exactly**. The only movement in the whole report is cost — one scenario −1.5%, overall −0.46% —
+which is precisely the split the design demands: verdicts must not move, costs may.
+
+Ledger now **21 runs, 182 cells, 100%**.
+
+**Published as [`../docs/METHOD-2026-09-07.html`](../docs/METHOD-2026-09-07.html)**, which argues the
+method rather than the score, because there is no Nudox score to argue.
