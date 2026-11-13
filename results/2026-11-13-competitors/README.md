@@ -64,3 +64,9 @@ that is the agent-driven track in `docs/PENDING.md`.
 Roots: `$CARGO_SRC` (cargo registry), `PY_SITE=/home/claude/pkgs/py`
 (`pip install --target`, requests 2.34.2), `NODE_MODULES=…/node_modules`
 (commander 12.1.0).
+
+## Reproducibility
+
+`nbench verify --config configs/competitors.toml --repeat 2` (each run copies
+and re-indexes every root from scratch): **90 cells, 100% reproduced exactly,
+no cost moved more than 5%.**

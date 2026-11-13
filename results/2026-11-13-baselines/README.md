@@ -27,3 +27,8 @@ only as the bare word `request` (strict 50%).
 * Nudox (no `backend-mcp` build; see `docs/RUN-V2-LOCALLY.md`).
 * Go scenarios (no Go module proxy access), the six diffs (ripgrep declines
   them), the judge.
+
+## Reproducibility
+
+`nbench verify --config configs/baselines.toml --repeat 2`: **60 cells, 100%
+reproduced exactly, no cost moved more than 5%.**
