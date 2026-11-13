@@ -1,0 +1,40 @@
+# Ground truth derived by reading requests 2.34.2 (sessions.py, auth.py)
+# directly, not from memory:
+#   rg -n 'send\(' requests/
+# `Session.send` is declared at sessions.py:752; `SessionRedirectMixin`
+# declares a typing stub for it at sessions.py:132 so that its own code can
+# call `self.send`. The callers are:
+#   Session.request                         sessions.py:557, call at :651
+#   SessionRedirectMixin.resolve_redirects  sessions.py:186, call at :292
+# Not callers: `HTTPDigestAuth.handle_401` (auth.py:273) calls
+# `r.connection.send(prep, **kwargs)` at auth.py:312 — that is the transport
+# adapter's `send` (`HTTPAdapter.send`, adapters.py:634), not the session's.
+# `Session.send` itself calls `adapter.send` at sessions.py:784.
+id = "py/requests/callers-session-send"
+family = "polyglot"
+task = "callers"
+question = """
+In requests 2.34.2, which methods call the session's `send` method (`requests.sessions.Session.send`)?"""
+notes = """
+Three classes in this package have a method called `send` (BaseAdapter, HTTPAdapter, Session, plus the mixin stub), and every call is spelled `.send(`. `handle_401` is the distractor: its call goes to the connection adapter. `resolve_redirects` calls `self.send` from the mixin, which a static resolver may attribute to the stub at :132 rather than to `Session.send`; it is still in `all_of`, because the stub exists precisely to declare that method for the mixin. `Session.request` is written qualified because `request` alone is a common word."""
+
+[target]
+ecosystem = "pypi"
+package = "requests"
+version = "2.34.2"
+root = "${PY_SITE}/requests"
+
+[probe]
+name = "send"
+symbol = "requests.sessions.Session.send"
+query = "send"
+kind = "method"
+
+[truth]
+mode = "symbol_set"
+all_of = ["resolve_redirects", "Session.request"]
+none_of = ["handle_401"]
+
+[budget]
+max_tool_calls = 4
+token_budget = 5000

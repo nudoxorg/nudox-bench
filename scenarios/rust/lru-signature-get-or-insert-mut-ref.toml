@@ -1,0 +1,35 @@
+# Signature read from lru-0.18.4/src/lib.rs:959-964:
+#   pub fn get_or_insert_mut_ref<'a, Q, F>(&'a mut self, k: &'_ Q, f: F) -> &'a mut V
+#   where K: Borrow<Q>, Q: Hash + Eq + ?Sized + alloc::borrow::ToOwned<Owned = K>,
+#         F: FnOnce() -> V,
+# In lru-0.16.4 the receiver was `&mut self`; 0.18.4 ties it to `'a`.
+# The sibling `get_or_insert_ref` (src/lib.rs:693) has the same parameters but
+# returns `&'a V`.
+id = "rust/lru/signature-get-or-insert-mut-ref"
+family = "retrieval"
+task = "signature"
+question = """
+What is the exact signature of `LruCache::get_or_insert_mut_ref` in lru 0.18.4, including lifetimes and bounds?"""
+notes = """
+Version-sensitive: the `&'a mut self` receiver is new in 0.18.x, so an index of a different lru version answers this wrongly with full confidence. The sibling `get_or_insert_ref` differs only in returning `&'a V`; returning it as well means the symbol was not resolved."""
+
+[target]
+ecosystem = "crates.io"
+package = "lru"
+version = "0.18.4"
+root = "${CARGO_SRC}/lru-0.18.4"
+
+[probe]
+name = "get_or_insert_mut_ref"
+symbol = "lru::LruCache::get_or_insert_mut_ref"
+query = "get_or_insert_mut_ref"
+kind = "method"
+
+[truth]
+mode = "literal"
+all_of = ["&'a mut self", "k: &'_ Q", "-> &'a mut V", "ToOwned<Owned = K>"]
+none_of = ["get_or_insert_ref"]
+
+[budget]
+max_tool_calls = 3
+token_budget = 2500

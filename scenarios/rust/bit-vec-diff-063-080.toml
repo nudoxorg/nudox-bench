@@ -1,0 +1,35 @@
+# Ground truth derived mechanically, then read. Every `pub fn` signature at
+# impl indentation in src/lib.rs of bit-vec-0.6.3 and bit-vec-0.8.0 was
+# extracted and diffed: seven additions, no removals, no changed signatures.
+# All seven are inside `impl<B: BitBlock> BitVec<B>` (bit-vec-0.8.0/src/lib.rs:418-1677):
+#   get_unchecked :586, get_mut :608, get_unchecked_mut :638, count_ones :1069,
+#   count_zeros :1092, iter_mut :1137, insert :1647.
+# `from_fn` (0.6.3 :369, 0.8.0 :406) and `to_bytes` (0.6.3 :1103, 0.8.0 :1315)
+# exist with identical signatures in both versions.
+id = "rust/bit-vec/diff-0.6.3-to-0.8.0"
+family = "retrieval"
+task = "diff"
+question = """
+What public methods does bit-vec 0.8.0 add to `BitVec` that 0.6.3 did not have?"""
+notes = """
+The two distractors do not appear in the signature diff: they are unchanged public neighbours that a whole-surface listing names and a diff does not. `get_unchecked`, `get_unchecked_mut` and `get_mut` share a prefix with the unchanged `get`, which is why `get` itself is not used as a distractor: as a bare word it appears in ordinary prose."""
+
+[target]
+ecosystem = "crates.io"
+package = "bit-vec"
+version = "0.6.3"
+to_version = "0.8.0"
+root = "${CARGO_SRC}/bit-vec-0.8.0"
+
+[probe]
+query = "BitVec"
+name = "BitVec"
+
+[truth]
+mode = "symbol_set"
+all_of = ["get_unchecked", "get_mut", "get_unchecked_mut", "count_ones", "count_zeros", "iter_mut", "insert"]
+none_of = ["to_bytes", "from_fn"]
+
+[budget]
+max_tool_calls = 3
+token_budget = 6000

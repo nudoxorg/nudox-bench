@@ -1,0 +1,33 @@
+# Signature read from hashbrown-0.17.1/src/set.rs:1074:
+#   pub fn insert(&mut self, value: T) -> bool {
+# inside `impl<T, S, A> HashSet<T, S, A>`. Other `insert`s in the crate:
+# `HashMap::insert` (src/map.rs) returns `Option<V>`; the set entry type's
+# `insert(self) -> OccupiedEntry<'a, T, S, A>` is at src/set.rs:2331.
+id = "rust/hashbrown/signature-hashset-insert"
+family = "efficiency"
+task = "signature"
+question = """
+What does `HashSet::insert` take and return in hashbrown 0.17.1?"""
+notes = """
+`insert` is declared on at least five types in this crate. The answer is one line; what is measured is whether a tool can return that one line rather than every `insert`. The distractors are the return types of the two nearest same-named methods."""
+
+[target]
+ecosystem = "crates.io"
+package = "hashbrown"
+version = "0.17.1"
+root = "${CARGO_SRC}/hashbrown-0.17.1"
+
+[probe]
+name = "insert"
+symbol = "hashbrown::set::HashSet::insert"
+query = "insert"
+kind = "method"
+
+[truth]
+mode = "literal"
+all_of = ["value: T", "-> bool"]
+none_of = ["Option<V>", "OccupiedEntry<'a, T, S, A>"]
+
+[budget]
+max_tool_calls = 3
+token_budget = 1500

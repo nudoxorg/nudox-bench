@@ -1,0 +1,38 @@
+# Ground truth derived mechanically, then read, not recalled. Every `pub fn`
+# signature at impl indentation was extracted from src/lib.rs of both
+# lru-0.16.4 and lru-0.18.4 and the two sets diffed (see the scenario notes for
+# the command). lru is a single-file crate, so src/lib.rs is the whole API.
+# 0.18.4 adds three methods, all inside `impl ... LruCache<K, V>`:
+#   sparse            lru-0.18.4/src/lib.rs:245  (impl<K: Hash + Eq, V> LruCache<K, V>, :221)
+#   find_and_promote  lru-0.18.4/src/lib.rs:1517 (impl<K: Hash + Eq, V, S: BuildHasher>, :263)
+#   retain            lru-0.18.4/src/lib.rs:1567
+# One signature changed: get_or_insert_mut_ref now borrows `&'a mut self`
+# (0.16.4 had `&mut self`) — a change, not an addition, so it is in neither list.
+# `peek_lru` and `demote` exist with identical signatures in both versions.
+id = "rust/lru/diff-0.16.4-to-0.18.4"
+family = "retrieval"
+task = "diff"
+question = """
+What public methods does lru 0.18.4 add to `LruCache` that 0.16.4 did not have?"""
+notes = """
+Found by: rg -o -r '$1' '^    pub (?:const )?(?:unsafe )?fn (\\w+[^{]*)' src/lib.rs, sorted, for each version, then diff. The distractors are unchanged neighbours with distinctive names: an answer that lists the whole `LruCache` surface rather than the difference names them; a diff does not. The lifetime change on `get_or_insert_mut_ref` is real but is a changed signature, not an added method, so it is scored neither way."""
+
+[target]
+ecosystem = "crates.io"
+package = "lru"
+version = "0.16.4"
+to_version = "0.18.4"
+root = "${CARGO_SRC}/lru-0.18.4"
+
+[probe]
+query = "LruCache"
+name = "LruCache"
+
+[truth]
+mode = "symbol_set"
+all_of = ["sparse", "find_and_promote", "retain"]
+none_of = ["peek_lru", "demote"]
+
+[budget]
+max_tool_calls = 3
+token_budget = 6000

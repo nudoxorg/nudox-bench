@@ -1,0 +1,46 @@
+# Ground truth derived mechanically, then read. Every `fn` at 4-space
+# indentation in src/lib.rs of itertools-0.14.0 and itertools-0.15.0 was
+# extracted and diffed; each name only in 0.15.0 was then checked to lie inside
+# `pub trait Itertools: Iterator` (itertools-0.15.0/src/lib.rs:457-5195).
+# Sixteen methods are new, e.g. array_windows :947, circular_array_windows
+# :1021, unique_with_hasher :1713, array_combinations_with_replacement :2097,
+# all_unique_with_hasher :2606, counts_with_hasher :5008, strip_prefix :5146,
+# strip_prefix_by :5172. None is removed.
+# `tuple_windows` (0.14.0 :777, 0.15.0 :826) and `circular_tuple_windows`
+# (:813 / :862) have byte-identical declarations in both versions.
+# `array_combinations` exists in both but its bound changed from
+# `Self: Sized + Clone` to `Self: Sized`, so it is scored neither way.
+id = "rust/itertools/diff-0.14.0-to-0.15.0"
+family = "retrieval"
+task = "diff"
+question = """
+Which methods does the `Itertools` trait gain in itertools 0.15.0 compared with 0.14.0?"""
+notes = """
+Hard: sixteen facts, ten of them `*_with_hasher` variants that differ from an existing method only by suffix, so a name-level diff is exactly right and a fuzzy one is not. The distractors are the closest unchanged names to the new `array_windows`/`circular_array_windows`."""
+
+[target]
+ecosystem = "crates.io"
+package = "itertools"
+version = "0.14.0"
+to_version = "0.15.0"
+root = "${CARGO_SRC}/itertools-0.15.0"
+
+[probe]
+query = "Itertools"
+name = "Itertools"
+
+[truth]
+mode = "symbol_set"
+all_of = [
+  "all_unique_with_hasher", "array_combinations_with_replacement", "array_windows",
+  "circular_array_windows", "counts_by_with_hasher", "counts_with_hasher",
+  "duplicates_by_with_hasher", "duplicates_with_hasher", "into_group_map_by_with_hasher",
+  "into_group_map_with_hasher", "into_grouping_map_by_with_hasher",
+  "into_grouping_map_with_hasher", "strip_prefix", "strip_prefix_by",
+  "unique_by_with_hasher", "unique_with_hasher",
+]
+none_of = ["tuple_windows", "circular_tuple_windows"]
+
+[budget]
+max_tool_calls = 4
+token_budget = 12000

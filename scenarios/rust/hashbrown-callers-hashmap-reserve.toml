@@ -1,0 +1,40 @@
+# Ground truth derived by reading hashbrown-0.17.1 directly:
+#   rg -n '\.reserve\(' src/
+# `HashMap::reserve` is declared at src/map.rs:1081. Its unconditional,
+# non-test callers are:
+#   <HashMap as Extend<(K, V)>>::extend   src/map.rs:4878 (impl at :4825)
+#   HashSet::reserve                       src/set.rs:640  (`self.map.reserve`)
+# Feature-gated callers, in neither list: extend_reserve (src/map.rs:4902,
+# cfg nightly), rustc_entry (src/rustc_entry.rs:46, rustc-internal-api), the
+# rayon `extend` helper (src/external_trait_impls/rayon/map.rs:451).
+# Same-named `reserve` on other types: RawTable::reserve (src/raw.rs:909) is
+# called from RawTable::insert (:1039) and `find_or_find_insert_index`
+# (:1126); HashTable::reserve (src/table.rs:845) calls it at :846.
+id = "rust/hashbrown/callers-hashmap-reserve"
+family = "retrieval"
+task = "callers"
+question = """
+In hashbrown 0.17.1, which functions call `HashMap::reserve` (not `RawTable::reserve` or `HashTable::reserve`)?"""
+notes = """
+Four types in this crate have a method called `reserve`, and every call site is spelled `.reserve(`. Only a resolved receiver type separates a call to `HashMap::reserve` from one to `RawTable::reserve`; `find_or_find_insert_index` is the distinctive name on the wrong side. `extend` is a common word, so loose recall on it is cheap — the scenario is about the distractor."""
+
+[target]
+ecosystem = "crates.io"
+package = "hashbrown"
+version = "0.17.1"
+root = "${CARGO_SRC}/hashbrown-0.17.1"
+
+[probe]
+name = "reserve"
+symbol = "hashbrown::map::HashMap::reserve"
+query = "reserve"
+kind = "method"
+
+[truth]
+mode = "symbol_set"
+all_of = ["extend", "HashSet"]
+none_of = ["find_or_find_insert_index"]
+
+[budget]
+max_tool_calls = 4
+token_budget = 5000

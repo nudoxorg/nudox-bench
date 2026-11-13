@@ -1,0 +1,36 @@
+# Signature read from hashbrown-0.17.1/src/table.rs:1474-1478:
+#   pub fn get_disjoint_mut<const N: usize>(
+#       &mut self,
+#       hashes: [u64; N],
+#       eq: impl FnMut(usize, &T) -> bool,
+#   ) -> [Option<&'_ mut T>; N]
+# The same-named method on HashMap (src/map.rs:1533) takes `ks: [&Q; N]` and
+# returns `[Option<&'_ mut V>; N]`.
+id = "rust/hashbrown/signature-hashtable-get-disjoint-mut"
+family = "retrieval"
+task = "signature"
+question = """
+What parameters does `HashTable::get_disjoint_mut` take in hashbrown 0.17.1, and what does it return?"""
+notes = """
+Same name, different type, different signature: `HashMap::get_disjoint_mut` is keyed by borrowed keys, `HashTable::get_disjoint_mut` by precomputed hashes plus an equality closure. The distractor is the HashMap parameter spelling. RawTable also has a `get_disjoint_mut` (crate-private) whose parameters match HashTable's; it is not scored."""
+
+[target]
+ecosystem = "crates.io"
+package = "hashbrown"
+version = "0.17.1"
+root = "${CARGO_SRC}/hashbrown-0.17.1"
+
+[probe]
+name = "get_disjoint_mut"
+symbol = "hashbrown::table::HashTable::get_disjoint_mut"
+query = "get_disjoint_mut"
+kind = "method"
+
+[truth]
+mode = "literal"
+all_of = ["hashes: [u64; N]", "eq: impl FnMut(usize, &T) -> bool", "[Option<&'_ mut T>; N]"]
+none_of = ["ks: [&Q; N]"]
+
+[budget]
+max_tool_calls = 3
+token_budget = 3000
