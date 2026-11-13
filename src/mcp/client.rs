@@ -29,8 +29,22 @@ pub enum McpTransport {
         command: String,
         args: Vec<String>,
         env: HashMap<String, String>,
+        /// Working directory for the child. Some servers (CodeGraph among
+        /// them) resolve their project from where they were started.
+        cwd: Option<std::path::PathBuf>,
     },
 }
+
+/// How long one request may take before the session gives up on it.
+///
+/// # Why there is a ceiling at all
+///
+/// A stdio server that stops answering never closes its stdout, so a read
+/// with no deadline waits for ever — and one hung scenario then hangs the
+/// whole matrix, with no report written. Five minutes is far past any
+/// answer measured so far (indexing is polled in short calls, not waited on
+/// in one), so hitting it means the server is stuck, not slow.
+pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// One tool as the server describes it, kept as raw JSON so its full
 /// description text can be measured rather than summarized.
@@ -104,6 +118,8 @@ pub struct McpClient {
     next_id: std::sync::atomic::AtomicI64,
     tools: Vec<ToolDescriptor>,
     server_name: String,
+    instructions: String,
+    timeout: Duration,
 }
 
 /// Boxed because the two variants differ sharply in size — an HTTP session is
@@ -132,6 +148,11 @@ struct StdioSession {
 impl McpClient {
     /// Connect, perform the MCP handshake, and cache the tool list.
     pub async fn connect(transport: McpTransport) -> Result<Self> {
+        Self::connect_with_timeout(transport, DEFAULT_REQUEST_TIMEOUT).await
+    }
+
+    /// [`connect`](Self::connect), with an explicit per-request deadline.
+    pub async fn connect_with_timeout(transport: McpTransport, timeout: Duration) -> Result<Self> {
         let transport = match transport {
             McpTransport::Http { url, token } => Transport::Http {
                 client: reqwest::Client::builder()
@@ -142,13 +163,22 @@ impl McpClient {
                 token,
                 session_id: Mutex::new(None),
             },
-            McpTransport::Stdio { command, args, env } => {
-                let mut child = tokio::process::Command::new(&command)
+            McpTransport::Stdio { command, args, env, cwd } => {
+                let mut process = tokio::process::Command::new(&command);
+                process
                     .args(&args)
                     .envs(&env)
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::null())
+                    // A session dropped on any path — an error, a timeout, a
+                    // panic in an adapter — must not leave a server running
+                    // behind the harness, holding a lock on its index.
+                    .kill_on_drop(true);
+                if let Some(cwd) = &cwd {
+                    process.current_dir(cwd);
+                }
+                let mut child = process
                     .spawn()
                     .with_context(|| format!("spawning MCP server `{command}`"))?;
                 let stdin = child.stdin.take().ok_or_else(|| anyhow!("no stdin"))?;
@@ -166,6 +196,8 @@ impl McpClient {
             next_id: std::sync::atomic::AtomicI64::new(1),
             tools: Vec::new(),
             server_name: String::new(),
+            instructions: String::new(),
+            timeout,
         };
 
         let init = client
@@ -184,6 +216,11 @@ impl McpClient {
             .pointer("/serverInfo/name")
             .and_then(Value::as_str)
             .unwrap_or("unknown")
+            .to_owned();
+        client.instructions = init
+            .get("instructions")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
             .to_owned();
 
         client.notify("notifications/initialized", json!({})).await.ok();
@@ -206,6 +243,17 @@ impl McpClient {
     /// The server's self-reported name.
     pub fn server_name(&self) -> &str {
         &self.server_name
+    }
+
+    /// The `instructions` text from the handshake. Resident in an agent's
+    /// context exactly like the tool list, so it is reported, not discarded.
+    pub fn instructions(&self) -> &str {
+        &self.instructions
+    }
+
+    /// Whether `tools/list` advertised a tool by this name.
+    pub fn has_tool(&self, name: &str) -> bool {
+        self.tools.iter().any(|tool| tool.name == name)
     }
 
     /// Every tool the server exposes.
@@ -292,6 +340,16 @@ impl McpClient {
     }
 
     async fn request(&self, method: &str, params: Value) -> Result<Value> {
+        match tokio::time::timeout(self.timeout, self.request_unbounded(method, params)).await {
+            Ok(result) => result,
+            Err(_) => bail!(
+                "{method}: no answer within {}s; the server is treated as hung",
+                self.timeout.as_secs()
+            ),
+        }
+    }
+
+    async fn request_unbounded(&self, method: &str, params: Value) -> Result<Value> {
         let id = self.next_id();
         let body = json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params });
 

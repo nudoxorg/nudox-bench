@@ -1,0 +1,42 @@
+# Third-party code-graph MCP servers, against the text-search floor.
+#
+# CodeGraph (`@colbymchenry/codegraph`) is run twice: as it ships, where
+# `tools/list` advertises only `codegraph_explore`, and with
+# `CODEGRAPH_MCP_TOOLS` re-enabling the purpose-built tools (callers,
+# callees, node, search). The difference between the two columns is what
+# the default surface choice costs or saves; neither is the harness
+# hobbling the tool.
+#
+# Install it where `$CODEGRAPH_BIN` (or the path below) can find it:
+#
+#     npm install --prefix ~/tools/codegraph @colbymchenry/codegraph
+#     export CODEGRAPH_BIN=~/tools/codegraph/node_modules/.bin/codegraph
+#     codegraph telemetry off      # recommended for benchmark runs
+#
+# Each package root is copied to a scratch directory and indexed there with
+# `codegraph init -y`, so no `.codegraph/` is ever written into a registry
+# cache. See docs/RUNNING.md.
+name = "competitors"
+description = "CodeGraph (default and full tool surface) against ripgrep"
+
+[[adapter]]
+kind = "mcp-stdio"
+name = "codegraph"
+profile = "codegraph"
+command = "${CODEGRAPH_BIN}"
+args = ["serve", "--mcp", "--path", "{root}", "--no-watch"]
+cwd = "{root}"
+index_command = ["${CODEGRAPH_BIN}", "init", "-y", "{root}"]
+
+[[adapter]]
+kind = "mcp-stdio"
+name = "codegraph-full"
+profile = "codegraph"
+command = "${CODEGRAPH_BIN}"
+args = ["serve", "--mcp", "--path", "{root}", "--no-watch"]
+cwd = "{root}"
+index_command = ["${CODEGRAPH_BIN}", "init", "-y", "{root}"]
+env = { CODEGRAPH_MCP_TOOLS = "explore,node,search,callers,callees,impact,files,status" }
+
+[[adapter]]
+kind = "ripgrep"

@@ -228,9 +228,64 @@ async fn check_declared(config: &RunConfig) -> usize {
                     }
                 }
             }
-            AdapterConfig::McpStdio { name, .. } => {
-                problems += 1;
-                println!("  MISSING adapter `{name}`: the generic stdio MCP adapter is declared but not wired yet");
+            AdapterConfig::NudoxV2 { binary, .. } => {
+                let Some(binary) = binary
+                    .clone()
+                    .or_else(|| std::env::var("NUDOX_MCP_BIN").ok())
+                    .map(|b| nudox_bench::scenario::expand_path(&b))
+                else {
+                    problems += 1;
+                    println!(
+                        "  MISSING nudox-v2: no backend-mcp. Set `binary` in the config or \
+                         $NUDOX_MCP_BIN\n          \
+                         (see docs/RUN-V2-LOCALLY.md)"
+                    );
+                    continue;
+                };
+                let scratch = std::env::temp_dir().join("nbench-nudox-v2-probe");
+                let _ = std::fs::create_dir_all(&scratch);
+                let transport = McpTransport::Stdio {
+                    command: binary.clone(),
+                    args: vec!["--project".into(), scratch.display().to_string()],
+                    env: Default::default(),
+                    cwd: Some(scratch),
+                };
+                match McpClient::connect_with_timeout(transport, std::time::Duration::from_secs(60)).await {
+                    Ok(client) => {
+                        let names: Vec<&str> = client.tools().iter().map(|t| t.name.as_str()).collect();
+                        println!(
+                            "  ok      nudox-v2 — {}, {} tools, {} cl100k resident",
+                            client.server_name(),
+                            names.len(),
+                            client.resident_cost().cl100k
+                        );
+                        for needed in ["backend.index", "backend.resolve", "backend.document",
+                                       "backend.references", "backend.graph", "backend.outline"] {
+                            if !names.contains(&needed) {
+                                println!("          note: `{needed}` is not listed; scenarios needing it will be unsupported");
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        problems += 1;
+                        println!("  FAILED  nudox-v2 at {binary}: {error:#}");
+                    }
+                }
+            }
+            AdapterConfig::McpStdio { name, profile, command, .. } => {
+                if let Err(e) = nudox_bench::adapter::mcp_stdio::Profile::by_name(profile) {
+                    problems += 1;
+                    println!("  FAILED  {name}: {e}");
+                    continue;
+                }
+                let command = nudox_bench::scenario::expand_path(command);
+                match which_ok(&command, &["--version"]).await {
+                    Some(version) => println!("  ok      {name} ({profile} profile) — {command} {version}"),
+                    None => {
+                        problems += 1;
+                        println!("  MISSING {name}: `{command}` is not runnable");
+                    }
+                }
             }
         }
     }

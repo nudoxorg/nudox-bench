@@ -1,0 +1,27 @@
+# Nudox Backend v2 (`backend-mcp` over stdio), against the tools an agent
+# already has.
+#
+# Build in the Backend checkout, then point the harness at the binary:
+#
+#     cargo build --locked -p backend-locald -p backend-mcp
+#     export NUDOX_MCP_BIN=$PWD/target/debug/backend-mcp
+#
+# `backend-mcp` finds `backend-locald` beside itself; set `locald` (or
+# $BACKEND_LOCALD_BIN) if it lives elsewhere. One server is started per
+# package root and each root is indexed once, before any scenario runs, by
+# following `index_poll` until the terminal receipt. Without a binary every
+# nudox-v2 attempt is `unsupported` and the other two columns still run.
+# Full walkthrough: docs/RUN-V2-LOCALLY.md.
+name = "v2"
+description = "Nudox Backend v2 over stdio MCP, against ripgrep and rust-analyzer"
+
+[[adapter]]
+kind = "nudox-v2"
+limit = 50
+index_timeout_secs = 900
+
+[[adapter]]
+kind = "ripgrep"
+
+[[adapter]]
+kind = "rust-analyzer"
