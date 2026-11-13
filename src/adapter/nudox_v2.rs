@@ -122,6 +122,20 @@ pub struct NudoxV2Adapter {
     sessions: HashMap<PathBuf, Session>,
     /// Roots whose server never started, with the reason.
     start_failures: HashMap<PathBuf, String>,
+    /// The workspace every session shares.
+    ///
+    /// # Why one workspace for all roots
+    ///
+    /// Without `--workspace`, `backend-mcp` derives a workspace per project
+    /// path, so each root lands on its own shelf. A diff names two packages
+    /// and both must be on the shelf the asking session reads: measured live,
+    /// `backend.diff` between two separately indexed lru checkouts answered
+    /// "diff package is not indexed", and with a shared workspace it found
+    /// both. The default is a fresh directory under the system temp dir whose
+    /// parent is owner-only, because the owner refuses a state parent other
+    /// users can reach ("private state parent is not owned by this user with
+    /// owner-only access").
+    workspace: Option<PathBuf>,
 }
 
 impl NudoxV2Adapter {
@@ -148,6 +162,11 @@ impl NudoxV2Adapter {
             tool_count: 0,
             sessions: HashMap::new(),
             start_failures: HashMap::new(),
+            workspace: None,
+        };
+        adapter.workspace = match adapter.settings.workspace.clone() {
+            Some(workspace) => Some(workspace),
+            None => private_workspace(),
         };
         let Some(binary) = adapter.settings.binary.clone() else {
             adapter.unavailable = Some(
@@ -180,7 +199,7 @@ impl NudoxV2Adapter {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("no binary"))?;
         let mut args = vec!["--project".to_owned(), project.display().to_string()];
-        if let Some(workspace) = &self.settings.workspace {
+        if let Some(workspace) = &self.workspace {
             args.push("--workspace".to_owned());
             args.push(workspace.display().to_string());
         }
@@ -226,9 +245,20 @@ impl NudoxV2Adapter {
             };
         }
         let deadline = Instant::now() + self.settings.index_timeout;
-        let started = client
+        let mut started = client
             .call_tool("backend.index", json!({ "path": root.display().to_string() }))
             .await;
+        for _ in 0..3 {
+            match &started {
+                Ok(r) if r.is_error && is_transient(&r.text) => {
+                    tokio::time::sleep(Duration::from_secs(3)).await;
+                    started = client
+                        .call_tool("backend.index", json!({ "path": root.display().to_string() }))
+                        .await;
+                }
+                _ => break,
+            }
+        }
         let mut response = match started {
             Ok(response) => response,
             Err(e) => {
@@ -293,7 +323,37 @@ impl NudoxV2Adapter {
     ) -> Option<Value> {
         let (name, label, call_args) = route(client, tool, args)?;
         let started = Instant::now();
-        match client.call_tool(&name, call_args.clone()).await {
+        let mut attempt = 0;
+        loop {
+            attempt += 1;
+            let response = client.call_tool(&name, call_args.clone()).await;
+            // A refusal that says the command "has not been submitted" is the
+            // local owner still starting, not an answer. The server asks for
+            // the same call again; it is retried, and the refused attempts
+            // stay in the transcript because they cost the agent context.
+            if let Ok(response) = &response {
+                if response.is_error && attempt < 4 && is_transient(&response.text) {
+                    builder.step(&label, call_args.to_string(), &response.text, response.elapsed, true);
+                    tokio::time::sleep(Duration::from_secs(3)).await;
+                    continue;
+                }
+            }
+            break Self::record(builder, tool, label, call_args, response, started, role, error);
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn record(
+        builder: &mut AttemptBuilder,
+        tool: &str,
+        label: String,
+        call_args: Value,
+        response: anyhow::Result<crate::mcp::ToolResponse>,
+        started: Instant,
+        role: Role,
+        error: &mut Option<String>,
+    ) -> Option<Value> {
+        match response {
             Ok(response) => {
                 builder.step(label, call_args.to_string(), &response.text, response.elapsed, response.is_error);
                 if role == Role::Answer {
@@ -312,6 +372,40 @@ impl NudoxV2Adapter {
             }
         }
     }
+}
+
+/// A fresh shared workspace under an owner-only parent, or `None` (each
+/// session then uses the server's per-project default) if one cannot be made.
+fn private_workspace() -> Option<PathBuf> {
+    let parent = std::env::temp_dir().join(format!("nbench-nudox-v2-{}", std::process::id()));
+    std::fs::create_dir_all(&parent).ok()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o700)).ok()?;
+    }
+    Some(parent.join("workspace"))
+}
+
+/// The checkout of a diff's *older* version, when it sits beside the newer.
+///
+/// A diff scenario's root is the newer checkout (`…/lru-0.18.4`). Registry
+/// caches keep versions side by side under the same naming, so the older one
+/// is the same path with the version swapped. When it exists, both are
+/// indexed and the diff is asked between the two local package labels — the
+/// form `backend.diff` documents beside a pinned purl.
+pub fn from_root(scenario: &Scenario) -> Option<PathBuf> {
+    if scenario.task != TaskKind::Diff {
+        return None;
+    }
+    let root = scenario.target.root.as_ref()?;
+    let to = scenario.target.to_version.as_deref()?;
+    let file = root.file_name()?.to_str()?;
+    if !file.contains(to) {
+        return None;
+    }
+    let older = root.with_file_name(file.replacen(to, &scenario.target.version, 1));
+    older.is_dir().then_some(older)
 }
 
 /// Whether a call produced the answer or found the subject of it.
@@ -346,6 +440,16 @@ fn route_for(
         ));
     }
     None
+}
+
+/// Whether a refusal is the owner asking for the same call again.
+///
+/// Measured live: "Retry the exact tool call in structuredContent.call; this
+/// command was not submitted. … the local daemon could not be started or
+/// reached: startup pending …". Nothing was done, so asking again is the
+/// documented next step rather than a second guess.
+fn is_transient(text: &str) -> bool {
+    text.contains("not submitted") || text.contains("has not been submitted")
 }
 
 fn first_line(text: &str) -> String {
@@ -395,7 +499,15 @@ fn index_verdict(raw: &Value, is_error: bool, text: &str) -> IndexVerdict {
         }
     }
     if is_error {
-        return IndexVerdict::Failed(format!("index refused: {}", first_line(text)));
+        // The first line is a heading (`# index-operation`); the reason is
+        // on the lines after it.
+        let reason: Vec<&str> = text
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .take(2)
+            .collect();
+        return IndexVerdict::Failed(format!("index refused: {}", reason.join(" — ")));
     }
     let Some(observation) = structured.get("index_operation") else {
         return IndexVerdict::Ready(vec!["~v2:index-no-receipt".to_owned()]);
@@ -438,6 +550,36 @@ struct Candidate {
     segments: Vec<String>,
     /// Package-relative source path, when given.
     path: Option<String>,
+    /// The row's declaration kind (`function`, `struct`, `import`,
+    /// `external reference`, ...), when given.
+    kind: Option<String>,
+}
+
+/// Whether a row can be the declaration a question is about.
+///
+/// Measured against the live server (Backend `a01c2b0`, 2026-11-13):
+/// `backend.resolve` for `memchr_iter` returns the function twice (a
+/// `semantic` and a `declaration` coordinate for the same source line), the
+/// `pub use` in `src/lib.rs` as kind `import`, and the name as an `external
+/// reference` with an `::external::symbol:` coordinate. Following an import
+/// or an external reference asks about the use site, not the declaration.
+fn is_declaration(candidate: &Candidate) -> bool {
+    if candidate.coordinate.contains("::external::") {
+        return false;
+    }
+    !matches!(candidate.kind.as_deref(), Some("import" | "external reference" | "module"))
+}
+
+/// Whether a path is test code rather than the package's own API.
+///
+/// Measured: memchr defines a second `memchr3` in
+/// `src/tests/memchr/naive.rs`, a `pub(crate)` reference implementation for
+/// its tests, and the live resolver ranks it above `src/memchr.rs:158`.
+/// Following it answered a signature question with the test helper.
+fn is_test_path(path: &str) -> bool {
+    path.split('/').any(|part| part == "tests" || part == "test" || part == "testdata")
+        || path.ends_with("_test.go")
+        || path.rsplit('/').next().is_some_and(|file| file.starts_with("test_"))
 }
 
 /// Pull candidate declarations out of a result, structured first.
@@ -473,7 +615,8 @@ fn candidates(raw: &Value, text: &str) -> Vec<Candidate> {
                 }
             }
             let path = identity.get("path").and_then(Value::as_str).map(str::to_owned);
-            out.push(Candidate { coordinate: coordinate.to_owned(), name, segments, path });
+            let kind = row.get("kind").and_then(Value::as_str).map(str::to_owned);
+            out.push(Candidate { coordinate: coordinate.to_owned(), name, segments, path, kind });
         }
     }
     if out.is_empty() {
@@ -482,6 +625,7 @@ fn candidates(raw: &Value, text: &str) -> Vec<Candidate> {
                 name: coordinate_name(&coordinate),
                 segments: coordinate_segments(&coordinate),
                 path: coordinate_file(&coordinate),
+                kind: None,
                 coordinate,
             });
         }
@@ -528,39 +672,49 @@ fn split_path(path: &str) -> Vec<String> {
 
 /// Choose the candidate the scenario is asking about.
 ///
-/// The ranking mirrors `pick_hit` in the legacy adapter, for the same
-/// measured reasons: a row whose own name *is* the probe name in the same
-/// case wins (the `Memchr3` struct versus the `memchr3` function); then the
-/// same name ignoring case; then the longest shared symbol-path suffix with
-/// `probe.symbol`; then how many of the probe's module segments appear in the
-/// row's file path (Backend's segments may omit the module path, which Rust
-/// spells in the file layout instead). Ties keep the server's order.
+/// Rows that are not declarations (imports, external references) are never
+/// chosen. Among the rest, strongest first:
 ///
-/// Unlike the legacy adapter this never falls back to the top row when no
-/// row carries the probe's name: following an unrelated coordinate would
-/// answer a different question with full confidence. `None` is returned
-/// instead, and the attempt is scored on what the lookup itself showed.
+/// 1. the row's own name *is* the probe name in the same case — the
+///    `Memchr3` struct versus the `memchr3` function, as in the legacy
+///    adapter's `pick_hit`;
+/// 2. the same name ignoring case;
+/// 3. not test code (see [`is_test_path`]);
+/// 4. the probe's `kind` (`function` versus `method`), when it names one —
+///    measured live, `memmem::find` the function shares `src/memmem/` with
+///    several `find` methods;
+/// 5. the file *is* the probe's module (`src/memmem/mod.rs` for `memmem`);
+/// 6. how well the probe's module path matches the row's file path, deeper
+///    modules weighing more. Backend's `segments` hold only the name for a
+///    Rust item (measured: `["memchr3"]`), so the module path is read from
+///    the file layout instead — `memchr::memmem::Finder::find` matches
+///    `src/memmem/mod.rs` on `memmem` more strongly than any
+///    `src/arch/.../memchr.rs` matches on the crate name;
+/// 7. the longest shared segment suffix.
+///
+/// Ties keep the server's order. When no row carries the probe's name,
+/// `None` is returned rather than the top row: following an unrelated
+/// coordinate would answer a different question with full confidence.
 fn pick<'a>(candidates: &'a [Candidate], scenario: &Scenario) -> Option<&'a Candidate> {
     let wanted_name = probe_name(scenario)?;
-    let wanted: Vec<String> = scenario
-        .probe
-        .symbol
-        .as_deref()
-        .map(split_path)
-        .unwrap_or_else(|| vec![wanted_name.clone()]);
+    let wanted = probe_path(scenario);
     let modules: Vec<String> = wanted
         .iter()
         .take(wanted.len().saturating_sub(1))
         .map(|s| s.to_ascii_lowercase())
         .collect();
 
-    let mut best: Option<(&Candidate, (u8, u8, usize, usize))> = None;
-    for candidate in candidates {
+    let wanted_kind = scenario.probe.kind.as_deref();
+    let wanted_module = modules.join("/");
+    let mut best: Option<(&Candidate, (u8, u8, u8, u8, u8, usize, usize))> = None;
+    for candidate in candidates.iter().filter(|c| is_declaration(c)) {
         let cased = u8::from(candidate.name == wanted_name);
         let folded = u8::from(candidate.name.eq_ignore_ascii_case(&wanted_name));
         if folded == 0 {
             continue;
         }
+        let path = candidate.path.as_deref().unwrap_or("");
+        let not_test = u8::from(!is_test_path(path));
         let suffix = candidate
             .segments
             .iter()
@@ -568,24 +722,82 @@ fn pick<'a>(candidates: &'a [Candidate], scenario: &Scenario) -> Option<&'a Cand
             .zip(wanted.iter().rev())
             .take_while(|(a, b)| a.eq_ignore_ascii_case(b))
             .count();
-        let file_parts: Vec<String> = candidate
-            .path
-            .as_deref()
-            .map(|p| {
-                p.split('/')
-                    .map(|part| part.trim_end_matches(".rs").trim_end_matches(".py")
-                        .trim_end_matches(".go").trim_end_matches(".ts").trim_end_matches(".js")
-                        .to_ascii_lowercase())
-                    .collect()
-            })
-            .unwrap_or_default();
-        let in_path = modules.iter().filter(|m| file_parts.contains(m)).count();
-        let score = (cased, folded, suffix, in_path);
+        let file_parts: Vec<String> = path
+            .split('/')
+            .map(|part| part.split('.').next().unwrap_or(part).to_ascii_lowercase())
+            .collect();
+        let in_path: usize = modules
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| file_parts.contains(m))
+            .map(|(depth, _)| depth + 1)
+            .sum();
+        let kind_match = u8::from(wanted_kind.is_some() && candidate.kind.as_deref() == wanted_kind);
+        let exact_module = u8::from(!wanted_module.is_empty() && file_module(path) == wanted_module);
+        let score = (cased, folded, not_test, kind_match, exact_module, in_path, suffix);
         if best.is_none_or(|(_, current)| score > current) {
             best = Some((candidate, score));
         }
     }
     best.map(|(candidate, _)| candidate)
+}
+
+/// The module a source file declares, Rust-style: `src/memmem/mod.rs` and
+/// `src/memmem.rs` are both `memmem`; `src/lib.rs` is the crate root.
+fn file_module(path: &str) -> String {
+    let path = path.strip_prefix("src/").unwrap_or(path);
+    let path = path.rsplit_once('.').map_or(path, |(stem, _)| stem);
+    let path = path
+        .strip_suffix("/mod")
+        .or_else(|| path.strip_suffix("/__init__"))
+        .unwrap_or(path);
+    if matches!(path, "lib" | "main" | "mod" | "__init__") {
+        String::new()
+    } else {
+        path.to_ascii_lowercase()
+    }
+}
+
+/// The probe's symbol path without the crate or package prefix.
+///
+/// `memchr::memmem::Finder::find` names the crate first; matching `memchr`
+/// against file paths would credit every `src/arch/*/memchr.rs`. So a leading
+/// segment equal to the package name (with `-` spelled `_`) is dropped.
+fn probe_path(scenario: &Scenario) -> Vec<String> {
+    let Some(symbol) = scenario.probe.symbol.as_deref() else {
+        return probe_name(scenario).into_iter().collect();
+    };
+    let mut parts = split_path(symbol);
+    let package = scenario.target.package.replace('-', "_");
+    let leaf = package.rsplit('/').next().unwrap_or(&package).to_ascii_lowercase();
+    if parts.len() > 1 && parts[0].eq_ignore_ascii_case(&leaf) {
+        parts.remove(0);
+    }
+    parts
+}
+
+/// The lookups to try, most specific first.
+///
+/// The live resolver accepts `Type::name` (measured: `Finder::find` returns
+/// only methods named `find` on types named `Finder`) but not a full module
+/// path (`memchr::memmem::Finder::find` returns nothing). So when the probe's
+/// path ends in a capitalised type segment the qualified form goes first,
+/// and the bare name follows as the fallback.
+fn lookup_queries(scenario: &Scenario) -> Vec<String> {
+    let mut out = Vec::new();
+    let path = probe_path(scenario);
+    if path.len() >= 2 {
+        let owner = &path[path.len() - 2];
+        if owner.chars().next().is_some_and(char::is_uppercase) {
+            out.push(format!("{owner}::{}", path[path.len() - 1]));
+        }
+    }
+    if let Some(name) = probe_name(scenario) {
+        if !out.contains(&name) {
+            out.push(name);
+        }
+    }
+    out
 }
 
 /// The bare name to look a symbol up by.
@@ -659,14 +871,30 @@ fn plan(task: TaskKind) -> &'static [&'static str] {
 /// absent (`apps/mcp/src/jsonrpc/tests/document_section_pages.rs`). Every
 /// other paged route offers `structuredContent.continuation_call`, an
 /// executable `{name, arguments}` — possibly addressed to `backend.call`.
-fn continuation(raw: &Value, tool: &str) -> Option<(String, Value)> {
+///
+/// `backend.outline` offers neither: measured live, its page ends with
+/// "copy `structuredContent.nextCursor` to `arguments.cursor`", so a bare
+/// `nextCursor` continues the same call with the previous arguments.
+fn continuation(raw: &Value, tool: &str, previous: &Value) -> Option<(String, Value)> {
     let structured = raw.get("structuredContent")?;
     if tool == "backend.document" {
         structured.pointer("/section_page/next_cursor")?.as_str()?;
         let args = structured.pointer("/section_page/continuation")?.clone();
         return Some((tool.to_owned(), args));
     }
-    let call = structured.get("continuation_call")?;
+    let Some(call) = structured.get("continuation_call") else {
+        let cursor = structured.get("nextCursor")?.as_str()?;
+        let mut args = previous.clone();
+        args["cursor"] = json!(cursor);
+        // The cursor is bound to the limit the server *chose*, which may be
+        // smaller than the one asked for (measured: 200 asked, `page.limit`
+        // 50 issued; resending 200 with the cursor is refused as "cursor is
+        // unknown, expired, or belongs to another workspace authority").
+        if let Some(limit) = structured.pointer("/page/limit") {
+            args["limit"] = limit.clone();
+        }
+        return Some((tool.to_owned(), args));
+    };
     let name = call.get("name")?.as_str()?.to_owned();
     let mut args = call.get("arguments").cloned().unwrap_or_else(|| json!({}));
     // Unwrap a `backend.call` envelope so routing decides the transport
@@ -706,9 +934,10 @@ impl Adapter for NudoxV2Adapter {
         }
         let mut roots: Vec<PathBuf> = Vec::new();
         for scenario in scenarios {
-            if let Some(root) = &scenario.target.root {
-                if root.is_dir() && !roots.contains(root) {
-                    roots.push(root.clone());
+            let candidates = scenario.target.root.iter().cloned().chain(from_root(scenario));
+            for root in candidates {
+                if root.is_dir() && !roots.contains(&root) {
+                    roots.push(root);
                 }
             }
         }
@@ -781,6 +1010,12 @@ impl Adapter for NudoxV2Adapter {
 
         // Questions that need no coordinate.
         let unscoped_args = match scenario.task {
+            TaskKind::Diff if from_root(scenario).is_some_and(|older| {
+                self.sessions.get(&older).is_some_and(|s| s.ready.is_ok())
+            }) => {
+                let older = from_root(scenario).expect("checked above");
+                Some(json!({ "from": older.display().to_string(), "to": root.display().to_string() }))
+            }
             TaskKind::Diff => {
                 let (Some(from), Some(to)) = (
                     purl(&scenario.target.ecosystem, &scenario.target.package, &scenario.target.version),
@@ -799,7 +1034,9 @@ impl Adapter for NudoxV2Adapter {
                 };
                 Some(json!({ "from": from, "to": to }))
             }
-            TaskKind::Overview => Some(json!({ "path": root.display().to_string(), "limit": limit })),
+            // Enumerating a surface wants the biggest page the grammar allows
+            // (200), as the legacy adapter asked `search` for 200 rows.
+            TaskKind::Overview => Some(json!({ "path": root.display().to_string(), "limit": 200 })),
             // As the legacy adapter: the name when there is one, because
             // matching is by name first, else the scenario's query.
             TaskKind::Search | TaskKind::Implement => {
@@ -820,8 +1057,8 @@ impl Adapter for NudoxV2Adapter {
                 if builder.tool_calls() >= budget {
                     break;
                 }
-                let raw = Self::call(client, &mut builder, &name, args, Role::Answer, &mut error).await;
-                next = raw.as_ref().and_then(|raw| continuation(raw, &name));
+                let raw = Self::call(client, &mut builder, &name, args.clone(), Role::Answer, &mut error).await;
+                next = raw.as_ref().and_then(|raw| continuation(raw, &name, &args));
             }
             return builder.finish(error);
         }
@@ -830,8 +1067,15 @@ impl Adapter for NudoxV2Adapter {
         let Some(name) = probe_name(scenario) else {
             return Attempt::unsupported(NAME, scenario, "probe names no symbol to resolve");
         };
+        // `resolve` for each spelling, then `search` on the bare name as the
+        // last resort — the order the server's own instructions give.
+        let mut lookups: Vec<(&str, String)> = lookup_queries(scenario)
+            .into_iter()
+            .map(|q| ("backend.resolve", q))
+            .collect();
+        lookups.push(("backend.search", name.clone()));
         let mut coordinate = None;
-        for lookup in ["backend.resolve", "backend.search"] {
+        for (lookup, query) in lookups {
             if route(client, lookup, json!({})).is_none() {
                 continue;
             }
@@ -839,7 +1083,7 @@ impl Adapter for NudoxV2Adapter {
                 client,
                 &mut builder,
                 lookup,
-                json!({ "query": name, "limit": limit }),
+                json!({ "query": query, "limit": limit }),
                 Role::Navigation,
                 &mut error,
             )
@@ -857,6 +1101,9 @@ impl Adapter for NudoxV2Adapter {
             return builder.finish(error);
         };
 
+        // The scenario's call budget is for answering; the lookups that found
+        // the coordinate are charged in the transcript but do not eat into it.
+        let lookup_calls = builder.tool_calls();
         for tool in tools {
             let mut next = Some(((*tool).to_owned(), json!({ "coordinate": coordinate })));
             if *tool == "backend.graph" {
@@ -865,15 +1112,28 @@ impl Adapter for NudoxV2Adapter {
                 }
             }
             while let Some((name, args)) = next.take() {
-                if builder.tool_calls() >= budget.max(tools.len() as u32 + 1) {
+                if builder.tool_calls() - lookup_calls >= budget.max(tools.len() as u32) {
                     break;
                 }
-                let raw = Self::call(client, &mut builder, &name, args, Role::Answer, &mut error).await;
+                let raw = Self::call(client, &mut builder, &name, args.clone(), Role::Answer, &mut error).await;
                 // Only members and graph pages are worth following: the other
                 // tools answer in one page or their later pages are sections
                 // the question did not ask about.
                 if matches!(scenario.task, TaskKind::Members | TaskKind::Outbound) {
-                    next = raw.as_ref().and_then(|raw| continuation(raw, &name));
+                    next = raw.as_ref().and_then(|raw| continuation(raw, &name, &args));
+                }
+                // An empty `references` page is not the end of a callers
+                // question: `document` carries a `called by` relation section
+                // drawn from the call graph. Measured live on memchr's
+                // `search_slice_with_raw`: references answered "no reference
+                // records captured at this revision". An agent told to
+                // "check status before trusting an empty result" would look
+                // further, so the harness does too, once.
+                if scenario.task == TaskKind::Callers
+                    && name == "backend.references"
+                    && raw.as_ref().is_some_and(|raw| flatten(raw).contains("no reference records"))
+                {
+                    next = Some(("backend.document".to_owned(), json!({ "coordinate": coordinate })));
                 }
             }
         }
@@ -1014,9 +1274,9 @@ mod tests {
     fn the_same_cased_name_beats_a_case_folded_one() {
         let rows = vec![
             Candidate { coordinate: "/p::src/memchr.rs:9::Memchr3".into(), name: "Memchr3".into(),
-                        segments: vec!["Memchr3".into()], path: Some("src/memchr.rs".into()) },
+                        segments: vec!["Memchr3".into()], path: Some("src/memchr.rs".into()), kind: None },
             Candidate { coordinate: "/p::src/memchr.rs:180::memchr3".into(), name: "memchr3".into(),
-                        segments: vec!["memchr3".into()], path: Some("src/memchr.rs".into()) },
+                        segments: vec!["memchr3".into()], path: Some("src/memchr.rs".into()), kind: None },
         ];
         let s = scenario(TaskKind::Signature, "memchr3", Some("memchr::memchr3"));
         assert_eq!(pick(&rows, &s).unwrap().name, "memchr3");
@@ -1028,10 +1288,10 @@ mod tests {
         let rows = vec![
             Candidate { coordinate: "/p::src/arch/x86_64/avx2/memchr.rs:40::find".into(),
                         name: "find".into(), segments: vec!["One".into(), "find".into()],
-                        path: Some("src/arch/x86_64/avx2/memchr.rs".into()) },
+                        path: Some("src/arch/x86_64/avx2/memchr.rs".into()), kind: None },
             Candidate { coordinate: "/p::src/memmem/mod.rs:700::find".into(), name: "find".into(),
                         segments: vec!["Finder".into(), "find".into()],
-                        path: Some("src/memmem/mod.rs".into()) },
+                        path: Some("src/memmem/mod.rs".into()), kind: None },
         ];
         let s = scenario(TaskKind::Outbound, "find", Some("memchr::memmem::Finder::find"));
         assert!(pick(&rows, &s).unwrap().coordinate.contains("memmem/mod.rs"));
@@ -1040,9 +1300,78 @@ mod tests {
     #[test]
     fn no_row_with_the_probe_name_means_no_coordinate_not_the_top_row() {
         let rows = vec![Candidate { coordinate: "/p::src/x.rs:1::other".into(), name: "other".into(),
-                                    segments: vec![], path: None }];
+                                    segments: vec![], path: None, kind: None }];
         let s = scenario(TaskKind::Callers, "memchr3", None);
         assert!(pick(&rows, &s).is_none());
+    }
+
+    fn cand(coordinate: &str, name: &str, path: &str, kind: &str) -> Candidate {
+        Candidate { coordinate: coordinate.into(), name: name.into(), segments: vec![name.into()],
+                    path: Some(path.into()), kind: Some(kind.into()) }
+    }
+
+    #[test]
+    fn imports_and_external_references_are_never_followed() {
+        // The live resolver lists the `pub use` and the external symbol for
+        // `memchr_iter` alongside the declaration.
+        let rows = vec![
+            cand("/p::src/lib.rs:203::memchr_iter", "memchr_iter", "src/lib.rs", "import"),
+            cand("/p::external::symbol:3b52::memchr_iter", "memchr_iter", "", "external reference"),
+            cand("/p::src/memchr.rs:216::memchr_iter", "memchr_iter", "src/memchr.rs", "function"),
+        ];
+        let s = scenario(TaskKind::Signature, "memchr_iter", Some("memchr::memchr_iter"));
+        assert_eq!(pick(&rows, &s).unwrap().coordinate, "/p::src/memchr.rs:216::memchr_iter");
+    }
+
+    #[test]
+    fn a_test_helper_of_the_same_name_loses_to_the_real_declaration() {
+        // Measured live: `src/tests/memchr/naive.rs:9::memchr3` ranked first.
+        let rows = vec![
+            cand("/p::semantic::2f9e::memchr3", "memchr3", "src/tests/memchr/naive.rs", "function"),
+            cand("/p::semantic::9363::memchr3", "memchr3", "src/memchr.rs", "function"),
+        ];
+        let s = scenario(TaskKind::Signature, "memchr3", Some("memchr::memchr3"));
+        assert_eq!(pick(&rows, &s).unwrap().coordinate, "/p::semantic::9363::memchr3");
+    }
+
+    #[test]
+    fn the_crate_name_does_not_count_as_a_module_match() {
+        let rows = vec![
+            cand("/p::a::find", "find", "src/arch/all/memchr.rs", "method"),
+            cand("/p::b::find", "find", "src/memmem/mod.rs", "method"),
+        ];
+        let s = scenario(TaskKind::Outbound, "find", Some("memchr::memmem::Finder::find"));
+        assert_eq!(pick(&rows, &s).unwrap().coordinate, "/p::b::find");
+    }
+
+    #[test]
+    fn a_method_is_looked_up_by_type_and_name_first_then_by_name() {
+        let s = scenario(TaskKind::Outbound, "find", Some("memchr::memmem::Finder::find"));
+        assert_eq!(lookup_queries(&s), vec!["Finder::find".to_owned(), "find".to_owned()]);
+        let s = scenario(TaskKind::Signature, "memchr3", Some("memchr::memchr3"));
+        assert_eq!(lookup_queries(&s), vec!["memchr3".to_owned()]);
+    }
+
+    #[test]
+    fn the_function_in_the_named_module_beats_methods_beside_it() {
+        let rows = vec![
+            cand("/p::a::find", "find", "src/memmem/searcher.rs", "method"),
+            cand("/p::b::find", "find", "src/memmem/mod.rs", "function"),
+        ];
+        let mut s = scenario(TaskKind::Outbound, "find", Some("memchr::memmem::find"));
+        s.probe.kind = Some("function".into());
+        assert_eq!(pick(&rows, &s).unwrap().coordinate, "/p::b::find");
+        assert_eq!(file_module("src/memmem/mod.rs"), "memmem");
+        assert_eq!(file_module("src/lib.rs"), "");
+    }
+
+    #[test]
+    fn test_paths_are_recognised_across_ecosystems() {
+        assert!(is_test_path("src/tests/memchr/naive.rs"));
+        assert!(is_test_path("uuid_test.go"));
+        assert!(is_test_path("tests/test_api.py"));
+        assert!(!is_test_path("src/memchr.rs"));
+        assert!(!is_test_path("src/attestation.rs"), "a substring is not a directory");
     }
 
     #[test]
@@ -1074,11 +1403,11 @@ mod tests {
         let next = json!({ "structuredContent": { "section_page": {
             "next_cursor": "c1", "continuation": { "coordinate": "/p::a", "cursor": "c1" } } } });
         assert_eq!(
-            continuation(&next, "backend.document"),
+            continuation(&next, "backend.document", &json!({})),
             Some(("backend.document".into(), json!({ "coordinate": "/p::a", "cursor": "c1" })))
         );
         let last = json!({ "structuredContent": { "section_page": { "continuation": {} } } });
-        assert_eq!(continuation(&last, "backend.document"), None);
+        assert_eq!(continuation(&last, "backend.document", &json!({})), None);
     }
 
     #[test]
@@ -1086,9 +1415,50 @@ mod tests {
         let raw = json!({ "structuredContent": { "continuation_call": { "name": "backend.call",
             "arguments": { "name": "backend.graph", "arguments": { "coordinate": "/p::a", "cursor": "n" } } } } });
         assert_eq!(
-            continuation(&raw, "backend.graph"),
+            continuation(&raw, "backend.graph", &json!({})),
             Some(("backend.graph".into(), json!({ "coordinate": "/p::a", "cursor": "n" })))
         );
+    }
+
+    #[test]
+    fn a_bare_next_cursor_continues_the_same_call() {
+        let raw = json!({ "structuredContent": { "nextCursor": "c2", "more": true } });
+        let previous = json!({ "path": "/p", "limit": 200 });
+        assert_eq!(
+            continuation(&raw, "backend.outline", &previous),
+            Some(("backend.outline".into(), json!({ "path": "/p", "limit": 200, "cursor": "c2" })))
+        );
+        assert_eq!(continuation(&json!({ "structuredContent": {} }), "backend.outline", &previous), None);
+    }
+
+    #[test]
+    fn a_continued_page_keeps_the_limit_the_server_issued() {
+        let raw = json!({ "structuredContent": { "nextCursor": "c2", "page": { "limit": 50 } } });
+        let (_, args) = continuation(&raw, "backend.outline", &json!({ "path": "/p", "limit": 200 })).unwrap();
+        assert_eq!(args, json!({ "path": "/p", "limit": 50, "cursor": "c2" }));
+    }
+
+    #[test]
+    fn an_owner_still_starting_is_retried_and_a_real_refusal_is_not() {
+        assert!(is_transient(
+            "Retry the exact tool call in structuredContent.call; this command was not submitted."
+        ));
+        assert!(!is_transient("✗ invalid-query\ndiff package is not indexed"));
+    }
+
+    #[test]
+    fn the_older_checkout_of_a_diff_is_found_beside_the_newer() {
+        let base = std::env::temp_dir().join(format!("nbench-fromroot-{}", std::process::id()));
+        std::fs::create_dir_all(base.join("lru-0.16.4")).unwrap();
+        std::fs::create_dir_all(base.join("lru-0.18.4")).unwrap();
+        let mut s = crate::testing::diff_scenario();
+        s.target.version = "0.16.4".into();
+        s.target.to_version = Some("0.18.4".into());
+        s.target.root = Some(base.join("lru-0.18.4"));
+        assert_eq!(from_root(&s), Some(base.join("lru-0.16.4")));
+        s.target.version = "0.15.0".into();
+        assert_eq!(from_root(&s), None, "an older version not on disk is not invented");
+        std::fs::remove_dir_all(&base).unwrap();
     }
 
     #[test]
