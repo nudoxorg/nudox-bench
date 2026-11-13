@@ -38,7 +38,20 @@ network, and they are the floor every Nudox number is read against:
 cargo run --bin nbench -- run --config configs/baselines.toml
 ```
 
-For the Nudox comparison you need a running endpoint. Nudox has no standalone
+For **Nudox Backend v2** (the current product) build `backend-mcp` and point
+the harness at it; the adapter starts and indexes servers itself:
+
+```bash
+export NUDOX_MCP_BIN=/path/to/Backend/target/debug/backend-mcp
+cargo run --bin nbench -- run --config configs/v2.toml
+```
+
+See [docs/RUN-V2-LOCALLY.md](docs/RUN-V2-LOCALLY.md). Third-party MCP servers
+run through `configs/competitors.toml` (CodeGraph first); see
+[docs/RUNNING.md](docs/RUNNING.md) §1c.
+
+*Legacy:* the rest of this section drives the pre-rewrite engine, whose
+endpoint Backend v2 no longer serves. Nudox had no standalone
 server — its MCP endpoint lives inside the `lindsey` GUI — so this repo ships
 the missing piece in [`endpoint/`](endpoint):
 
@@ -122,7 +135,9 @@ src/scenario.rs                    the scenario model
 src/truth.rs                       deterministic scoring (strict vs loose)
 src/tokens.rs                      BPE metering, cl100k + o200k
 src/mcp/                           a minimal MCP client (HTTP + stdio)
-src/adapter/                       nudox (with ablations), ripgrep, rust-analyzer
+src/adapter/                       nudox_v2 (Backend v2), mcp_stdio (third-party MCP,
+                                   profiles), ripgrep, rust-analyzer; nudox and
+                                   canonical are legacy
 src/judge.rs                       3-model panel, implementation scenarios only
 src/report.rs                      aggregation and the Markdown report
 ```

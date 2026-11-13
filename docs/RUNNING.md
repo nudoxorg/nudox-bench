@@ -54,7 +54,55 @@ export RUST_ANALYZER_BIN=~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/b
 
 ---
 
-## 2. Getting a Nudox endpoint
+## 1b. Nudox Backend v2 — the current product
+
+Backend v2 ships `backend-mcp`, a stdio MCP server, so there is no endpoint
+to start by hand: the `nudox-v2` adapter launches one server per package root
+(`backend-mcp --project <root>`), indexes the root by following the
+`index_poll` call the server hands back until its terminal receipt, and then
+answers each scenario with `backend.resolve` → document / source /
+references / graph / outline / diff. Routes that `tools/list` does not
+advertise (`backend.diff`, `backend.related`) go through `backend.call`, as the
+server's own instructions direct.
+
+```sh
+cd ../Backend && cargo build --locked -p backend-locald -p backend-mcp
+export NUDOX_MCP_BIN=$PWD/target/debug/backend-mcp
+cd ../nudox-bench
+cargo run --bin nbench -- doctor --config configs/v2.toml
+cargo run --bin nbench -- run --config configs/v2.toml
+```
+
+Without `$NUDOX_MCP_BIN` every `nudox-v2` attempt is **unsupported** with the
+reason, and the other columns still run. Indexing is done once per root in
+preflight and is not charged to any scenario. The exact steps, and what to
+send back if the adapter misreads the live server, are in
+[RUN-V2-LOCALLY.md](RUN-V2-LOCALLY.md).
+
+## 1c. Third-party MCP servers (`mcp-stdio`)
+
+`kind = "mcp-stdio"` runs any stdio MCP server under a named mapping profile
+(`src/adapter/mcp_stdio.rs`). `configs/competitors.toml` runs CodeGraph twice
+— as shipped (only `codegraph_explore` listed) and with `CODEGRAPH_MCP_TOOLS`
+re-enabling its narrower tools:
+
+```sh
+npm install --prefix ~/tools/codegraph @colbymchenry/codegraph
+export CODEGRAPH_BIN=~/tools/codegraph/node_modules/.bin/codegraph
+$CODEGRAPH_BIN telemetry off
+cargo run --bin nbench -- run --config configs/competitors.toml
+```
+
+Each package root is **copied** to `$TMPDIR/nbench-mcp/<adapter>/…` and
+indexed there (`index_command`, with `{root}` replaced by the copy), so no
+`.codegraph/` is ever written into a registry cache. Set `copy_root = false`
+to index in place. What is still pending (Context7, an agent-driven track) is
+listed in [PENDING.md](PENDING.md).
+
+## 2. Getting a Nudox endpoint (legacy engine)
+
+> **Legacy.** This section and the `nudox` adapter describe the pre-rewrite
+> engine's HTTP endpoint, which Backend v2 does not serve. Use §1b.
 
 Nudox's MCP server is **not a standalone binary**. It is started inside the
 `lindsey` GUI process by `McpHost::start`, and it is streamable-HTTP only
@@ -181,7 +229,9 @@ to sit, which is luck wearing the same clothes as a result.
 `--repeat 1` is refused. One run cannot disagree with itself, and a number
 that cannot fail is not evidence.
 
-## 5. Nudox on `canonical`
+## 5. Nudox on `canonical` (legacy)
+
+> **Legacy.** `interface-cli` no longer exists in Backend v2; use §1b.
 
 `canonical` replaced `workspace/nudox-engine` with a
 `compiler/ interface/ server/ heart/` layout. The MCP endpoint §2 describes

@@ -479,14 +479,25 @@ async fn main() -> Result<()> {
                 let present = root.is_dir();
                 seen.push((rendered.clone(), present));
                 if present {
+                    // A diff scenario's root is, by convention, the *newer*
+                    // checkout (`rust/hashbrown/diff-0.16.1-to-0.17.1` points
+                    // at hashbrown-0.17.1): file adapters decline diffs, and
+                    // the newer tree is the one a reader checks additions
+                    // against. Comparing it to `version` reported every diff
+                    // scenario alone on its root as skewed.
+                    let expected = if scenario.task == nudox_bench::scenario::TaskKind::Diff {
+                        scenario.target.to_version.as_deref().unwrap_or(&scenario.target.version)
+                    } else {
+                        scenario.target.version.as_str()
+                    };
                     match root_version(&scenario.target.ecosystem, root) {
-                        Some(found) if found != scenario.target.version => {
+                        Some(found) if found != expected => {
                             problems += 1;
                             println!(
                                 "  SKEW    {rendered}\n          \
                                  holds {found}, but scenarios describe {}. The run would \
                                  produce real-looking numbers about the wrong code.",
-                                scenario.target.version
+                                expected
                             );
                         }
                         Some(found) => println!("  ok      {rendered} ({found})"),

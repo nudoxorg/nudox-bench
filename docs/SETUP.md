@@ -141,7 +141,12 @@ npm install commander                         # then point $NODE_MODULES at ./no
 
 ---
 
-## 2. Tier 2 — a real Nudox endpoint
+## 2. Tier 2 — a real Nudox endpoint (legacy engine)
+
+> **Legacy.** Tier 2 describes the pre-rewrite engine. For Backend v2 build
+> `backend-mcp` and set `$NUDOX_MCP_BIN`: see [RUN-V2-LOCALLY.md](RUN-V2-LOCALLY.md).
+> Package roots for the newer scenarios: `$PY_SITE` and `$NODE_MODULES` can
+> point at a `pip install --target` / `npm install --prefix` directory.
 
 Nudox's MCP server is **not a standalone binary**. It is started inside the
 `lindsey` GUI process by `McpHost::start`, streamable-HTTP only, loopback only,
@@ -502,7 +507,9 @@ Useful `run` flags:
 | config | adapters |
 |---|---|
 | `configs/baselines.toml` | ripgrep, rust-analyzer — no endpoint needed |
-| `configs/default.toml` | nudox-full against both baselines |
+| `configs/v2.toml` | **nudox-v2** (Backend v2 `backend-mcp`, needs `$NUDOX_MCP_BIN`) against both baselines — see [RUN-V2-LOCALLY.md](RUN-V2-LOCALLY.md) |
+| `configs/competitors.toml` | CodeGraph (default and full tool surface) against ripgrep — needs `$CODEGRAPH_BIN` |
+| `configs/default.toml` | nudox-full against both baselines (*legacy engine*) |
 | `configs/ablations.toml` | all five Nudox policies plus ripgrep |
 | `configs/everything.toml` | all five policies plus both baselines — what the charts come from |
 
