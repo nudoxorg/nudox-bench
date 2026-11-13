@@ -122,20 +122,22 @@ pub struct NudoxV2Adapter {
     sessions: HashMap<PathBuf, Session>,
     /// Roots whose server never started, with the reason.
     start_failures: HashMap<PathBuf, String>,
-    /// The workspace every session shares.
+    /// `--workspace` for the per-root sessions, when configured. Unset, each
+    /// root gets the server's own per-project workspace.
     ///
-    /// # Why one workspace for all roots
+    /// # Why not one workspace for everything
     ///
-    /// Without `--workspace`, `backend-mcp` derives a workspace per project
-    /// path, so each root lands on its own shelf. A diff names two packages
-    /// and both must be on the shelf the asking session reads: measured live,
-    /// `backend.diff` between two separately indexed lru checkouts answered
-    /// "diff package is not indexed", and with a shared workspace it found
-    /// both. The default is a fresh directory under the system temp dir whose
-    /// parent is owner-only, because the owner refuses a state parent other
-    /// users can reach ("private state parent is not owned by this user with
-    /// owner-only access").
+    /// Tried, measured, reverted: with every session pointed at one shared
+    /// workspace, the sessions' owners displaced one another — indexing
+    /// answered "owner restarted or stopped before the exact commit was
+    /// selected" and "the local endpoint closed this connection" for 11 of 12
+    /// roots. Separate workspaces coexist; diffs get their own, see
+    /// [`NudoxV2Adapter::open_diff`].
     workspace: Option<PathBuf>,
+    /// One session per diff, keyed by the newer root, in a workspace that
+    /// holds both versions.
+    diff_sessions: HashMap<PathBuf, Session>,
+    diff_failures: HashMap<PathBuf, String>,
 }
 
 impl NudoxV2Adapter {
@@ -163,11 +165,10 @@ impl NudoxV2Adapter {
             sessions: HashMap::new(),
             start_failures: HashMap::new(),
             workspace: None,
+            diff_sessions: HashMap::new(),
+            diff_failures: HashMap::new(),
         };
-        adapter.workspace = match adapter.settings.workspace.clone() {
-            Some(workspace) => Some(workspace),
-            None => private_workspace(),
-        };
+        adapter.workspace = adapter.settings.workspace.clone();
         let Some(binary) = adapter.settings.binary.clone() else {
             adapter.unavailable = Some(
                 "no backend-mcp binary: set `binary` in the config or $NUDOX_MCP_BIN \
@@ -193,13 +194,17 @@ impl NudoxV2Adapter {
     }
 
     async fn spawn(&self, project: &Path) -> anyhow::Result<McpClient> {
+        self.spawn_in(project, self.workspace.as_deref()).await
+    }
+
+    async fn spawn_in(&self, project: &Path, workspace: Option<&Path>) -> anyhow::Result<McpClient> {
         let binary = self
             .settings
             .binary
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("no binary"))?;
         let mut args = vec!["--project".to_owned(), project.display().to_string()];
-        if let Some(workspace) = &self.workspace {
+        if let Some(workspace) = workspace {
             args.push("--workspace".to_owned());
             args.push(workspace.display().to_string());
         }
@@ -235,6 +240,41 @@ impl NudoxV2Adapter {
         }
     }
 
+    /// Prepare a diff: index the older checkout, then the newer one, in a
+    /// workspace of their own, and keep the newer root's session to ask.
+    ///
+    /// # Why a separate workspace, and why one session at a time
+    ///
+    /// Measured live: with each root in its own per-project workspace,
+    /// `backend.diff` between two indexed lru checkouts answered "diff
+    /// package is not indexed" — the asking session's shelf held only one of
+    /// them. Indexing both into one workspace, one session after the other,
+    /// put both on the shelf. Two sessions open on one workspace at once
+    /// displace each other's owner, so the first is closed before the second
+    /// starts.
+    async fn open_diff(&mut self, older: &Path, newer: &Path) -> Result<(), String> {
+        if self.diff_sessions.contains_key(newer) {
+            return Ok(());
+        }
+        let label = format!("diff-{}", self.diff_sessions.len() + self.start_failures.len());
+        let workspace = private_workspace(&label).ok_or("could not create a private workspace")?;
+        let first = self
+            .spawn_in(older, Some(&workspace))
+            .await
+            .map_err(|e| format!("backend-mcp did not start: {e:#}"))?;
+        let first = self.index(first, older).await;
+        first.ready.clone().map_err(|why| format!("older checkout: {why}"))?;
+        drop(first);
+        let second = self
+            .spawn_in(newer, Some(&workspace))
+            .await
+            .map_err(|e| format!("backend-mcp did not start: {e:#}"))?;
+        let second = self.index(second, newer).await;
+        second.ready.clone().map_err(|why| format!("newer checkout: {why}"))?;
+        self.diff_sessions.insert(newer.to_path_buf(), second);
+        Ok(())
+    }
+
     /// Index `root` on a started session, waiting on the poll loop.
     async fn index(&self, client: McpClient, root: &Path) -> Session {
         if !client.has_tool("backend.index") {
@@ -248,10 +288,10 @@ impl NudoxV2Adapter {
         let mut started = client
             .call_tool("backend.index", json!({ "path": root.display().to_string() }))
             .await;
-        for _ in 0..3 {
+        for _ in 0..6 {
             match &started {
                 Ok(r) if r.is_error && is_transient(&r.text) => {
-                    tokio::time::sleep(Duration::from_secs(3)).await;
+                    tokio::time::sleep(Duration::from_secs(5)).await;
                     started = client
                         .call_tool("backend.index", json!({ "path": root.display().to_string() }))
                         .await;
@@ -332,9 +372,9 @@ impl NudoxV2Adapter {
             // the same call again; it is retried, and the refused attempts
             // stay in the transcript because they cost the agent context.
             if let Ok(response) = &response {
-                if response.is_error && attempt < 4 && is_transient(&response.text) {
+                if response.is_error && attempt < 6 && is_transient(&response.text) {
                     builder.step(&label, call_args.to_string(), &response.text, response.elapsed, true);
-                    tokio::time::sleep(Duration::from_secs(3)).await;
+                    tokio::time::sleep(Duration::from_secs(5)).await;
                     continue;
                 }
             }
@@ -374,15 +414,20 @@ impl NudoxV2Adapter {
     }
 }
 
-/// A fresh shared workspace under an owner-only parent, or `None` (each
-/// session then uses the server's per-project default) if one cannot be made.
-fn private_workspace() -> Option<PathBuf> {
-    let parent = std::env::temp_dir().join(format!("nbench-nudox-v2-{}", std::process::id()));
+/// A fresh workspace under an owner-only parent — the owner refuses a state
+/// parent other users can reach ("private state parent is not owned by this
+/// user with owner-only access").
+fn private_workspace(label: &str) -> Option<PathBuf> {
+    let parent = std::env::temp_dir()
+        .join(format!("nbench-nudox-v2-{}", std::process::id()))
+        .join(label);
     std::fs::create_dir_all(&parent).ok()?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o700)).ok()?;
+        for dir in [parent.parent()?, parent.as_path()] {
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700)).ok()?;
+        }
     }
     Some(parent.join("workspace"))
 }
@@ -448,8 +493,14 @@ fn route_for(
 /// command was not submitted. … the local daemon could not be started or
 /// reached: startup pending …". Nothing was done, so asking again is the
 /// documented next step rather than a second guess.
+///
+/// Also measured: "the local endpoint closed this connection (connection
+/// reset); the read changes nothing and can be repeated on a new
+/// connection" — the server's own statement that repeating is safe.
 fn is_transient(text: &str) -> bool {
-    text.contains("not submitted") || text.contains("has not been submitted")
+    text.contains("not submitted")
+        || text.contains("has not been submitted")
+        || text.contains("can be repeated on a new connection")
 }
 
 fn first_line(text: &str) -> String {
@@ -933,12 +984,24 @@ impl Adapter for NudoxV2Adapter {
             return Ok(());
         }
         let mut roots: Vec<PathBuf> = Vec::new();
+        let mut diffs: Vec<(PathBuf, PathBuf)> = Vec::new();
         for scenario in scenarios {
-            let candidates = scenario.target.root.iter().cloned().chain(from_root(scenario));
-            for root in candidates {
-                if root.is_dir() && !roots.contains(&root) {
-                    roots.push(root);
+            if let (Some(older), Some(newer)) = (from_root(scenario), scenario.target.root.clone()) {
+                if !diffs.contains(&(older.clone(), newer.clone())) {
+                    diffs.push((older, newer));
                 }
+                continue;
+            }
+            if let Some(root) = &scenario.target.root {
+                if root.is_dir() && !roots.contains(root) {
+                    roots.push(root.clone());
+                }
+            }
+        }
+        for (older, newer) in diffs {
+            if let Err(why) = self.open_diff(&older, &newer).await {
+                tracing::warn!("{NAME}: diff {} → {} not ready: {why}", older.display(), newer.display());
+                self.diff_failures.insert(newer, why);
             }
         }
         for root in roots {
@@ -966,7 +1029,19 @@ impl Adapter for NudoxV2Adapter {
                 format!("target.root does not exist: {}", root.display()),
             );
         }
-        if !self.sessions.contains_key(&root) {
+        let older = from_root(scenario);
+        if older.is_some() {
+            if let Some(why) = self.diff_failures.get(&root) {
+                return Attempt::unsupported(NAME, scenario, format!("diff not ready: {why}"));
+            }
+            if !self.diff_sessions.contains_key(&root) {
+                let older = older.clone().expect("checked");
+                if let Err(why) = self.open_diff(&older, &root).await {
+                    self.diff_failures.insert(root.clone(), why.clone());
+                    return Attempt::unsupported(NAME, scenario, format!("diff not ready: {why}"));
+                }
+            }
+        } else if !self.sessions.contains_key(&root) {
             match self.open_or_record(&root).await {
                 Some(session) => {
                     self.sessions.insert(root.clone(), session);
@@ -981,7 +1056,7 @@ impl Adapter for NudoxV2Adapter {
                 }
             }
         }
-        let session = &self.sessions[&root];
+        let session = if older.is_some() { &self.diff_sessions[&root] } else { &self.sessions[&root] };
         if let Err(why) = &session.ready {
             return Attempt::unsupported(NAME, scenario, format!("index not ready: {why}"));
         }
@@ -1010,10 +1085,8 @@ impl Adapter for NudoxV2Adapter {
 
         // Questions that need no coordinate.
         let unscoped_args = match scenario.task {
-            TaskKind::Diff if from_root(scenario).is_some_and(|older| {
-                self.sessions.get(&older).is_some_and(|s| s.ready.is_ok())
-            }) => {
-                let older = from_root(scenario).expect("checked above");
+            TaskKind::Diff if older.is_some() => {
+                let older = older.as_ref().expect("checked above");
                 Some(json!({ "from": older.display().to_string(), "to": root.display().to_string() }))
             }
             TaskKind::Diff => {
@@ -1143,6 +1216,7 @@ impl Adapter for NudoxV2Adapter {
     async fn shutdown(&mut self) {
         // Dropping the clients kills the children (`kill_on_drop`).
         self.sessions.clear();
+        self.diff_sessions.clear();
     }
 }
 
