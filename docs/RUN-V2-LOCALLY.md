@@ -2,10 +2,10 @@
 
 The `nudox-v2` adapter (`src/adapter/nudox_v2.rs`) drives `backend-mcp` over
 stdio. It was written against the Backend source at commit `a01c2b0` and its
-unit tests, but **it has not yet been run against a live server**: Backend did
-not build on the machine the adapter was written on (see the end of this
-page). These are the steps to run it on a machine where it does build, and
-what to send back if the adapter misreads what the server says.
+unit tests, then corrected against a live server built on a 2-core / 7 GB
+machine (results in `results/2026-11-13-v2/`). These are the steps to run it
+on your machine, and what to send back if the adapter misreads what the
+server says.
 
 ## 1. Build Backend
 
@@ -95,16 +95,18 @@ with `ROOT` set to a package root (e.g. `~/.cargo/registry/src/*/memchr-2.8.3`),
 and the same with `backend.resolve` `{"query":"memchr3"}` once indexing has
 finished. Those two replies are enough to correct the parsers.
 
-## Why it did not run where it was written
+## How it was built on a small machine
 
-Recorded so the attempt is not repeated blind:
+* `rustup toolchain install 1.97.1` could not download there; the build used
+  1.97.0 with `--ignore-rust-version`.
+* With 2 cores and a 7 GB memory limit the kernel OOM-killed rustc compiling
+  the vendored TypeScript checker `tsz-checker` (built at `opt-level = 2`
+  even in the dev profile; ~3.6 GB resident), at `-j 2` and at `-j 1`. This
+  completed in 36 minutes:
 
-* `rustup toolchain install 1.97.1` could not download (static.rust-lang.org
-  unreachable from that machine); the build used 1.97.0 with
-  `--ignore-rust-version`.
-* With 2 cores and a 7 GB memory limit, the build compiled several hundred
-  crates and was then killed by the kernel's OOM killer compiling the vendored
-  TypeScript checker `tsz-checker` (`third_party/tsz/crates/tsz-checker`,
-  built at `opt-level = 2` even in the dev profile): rustc reached ~3.6 GB
-  resident, at `-j 2` and again at `-j 1`. The outcome of a third attempt
-  with that crate's `opt-level` lowered is recorded in the run notes.
+```sh
+cargo build -j 1 --locked --ignore-rust-version \
+  --config 'profile.dev.package.tsz-checker.opt-level=0' \
+  --config 'profile.dev.package.tsz-checker.debug=0' \
+  -p backend-locald -p backend-mcp
+```
