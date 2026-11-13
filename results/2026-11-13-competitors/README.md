@@ -54,8 +54,8 @@ that is the agent-driven track in `docs/PENDING.md`.
 
 ## What was not run
 
-* **Nudox.** Backend v2 did not build on this machine — see
-  `docs/RUN-V2-LOCALLY.md`.
+* **Nudox** was not in this config; when this run was recorded Backend had
+  not yet built. It did later the same day — see `../2026-11-13-v2/`.
 * **Go**: `go/uuid/*` (3 scenarios) declined, `target.root does not exist`;
   the Go module proxy was unreachable from this session.
 * **Diffs** (6): declined by both CodeGraph columns and by ripgrep.

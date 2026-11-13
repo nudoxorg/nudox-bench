@@ -24,7 +24,7 @@ only as the bare word `request` (strict 50%).
 
 ## What was not run
 
-* Nudox (no `backend-mcp` build; see `docs/RUN-V2-LOCALLY.md`).
+* Nudox: not in this config; see `../2026-11-13-v2/`.
 * Go scenarios (no Go module proxy access), the six diffs (ripgrep declines
   them), the judge.
 
