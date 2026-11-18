@@ -1,0 +1,36 @@
+# Ground truth derived by reading commander 12.1.0 lib/ directly:
+#   rg -n '_concatValue' lib/
+# `Option._concatValue` is declared at lib/option.js:164. Its callers:
+#   Option.choices      lib/option.js:179, call at :188 (inside the parseArg closure)
+#   Command.addOption   lib/command.js:642, call at :676 (inside the
+#                       handleOptionValue arrow function it defines)
+# `Argument` declares its own `_concatValue` (lib/argument.js:56), called from
+# `Argument.choices` (lib/argument.js:97, call at :106).
+id = "ts/commander/callers-option-concat-value"
+family = "polyglot"
+task = "callers"
+question = """
+In commander 12.1.0, what calls `Option.prototype._concatValue` (lib/option.js), as opposed to `Argument`'s method of the same name?"""
+notes = """
+`Option` and `Argument` each have `_concatValue` and `choices`, with near-identical bodies. A name-only answer finds three call sites and cannot tell which `_concatValue` each reaches; `lib/argument.js` appearing in the answer means the Argument side was included. Both real callers make their call from inside a closure, so a tool must attribute the call to the enclosing method."""
+
+[target]
+ecosystem = "npm"
+package = "commander"
+version = "12.1.0"
+root = "${NODE_MODULES}/commander"
+
+[probe]
+name = "_concatValue"
+symbol = "Option._concatValue"
+query = "_concatValue"
+kind = "method"
+
+[truth]
+mode = "symbol_set"
+all_of = ["addOption", "choices"]
+none_of = ["argument.js"]
+
+[budget]
+max_tool_calls = 3
+token_budget = 4000

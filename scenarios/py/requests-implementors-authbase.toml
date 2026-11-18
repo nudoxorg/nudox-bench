@@ -1,0 +1,37 @@
+# Ground truth derived by reading requests 2.34.2 auth.py directly:
+#   rg -n '^class |^def ' requests/auth.py
+#   class AuthBase:                       auth.py:78
+#   class HTTPBasicAuth(AuthBase):        auth.py:85
+#   class HTTPProxyAuth(HTTPBasicAuth):   auth.py:116   (indirect)
+#   class HTTPDigestAuth(AuthBase):       auth.py:124
+#   def _basic_auth_str(...)              auth.py:34    (a helper, not a class)
+# No other module subclasses AuthBase (`rg -n AuthBase` finds only a type
+# alias in _types.py:59,132).
+id = "py/requests/implementors-authbase"
+family = "polyglot"
+task = "implementors"
+question = """
+Which classes in requests 2.34.2 subclass `requests.auth.AuthBase`?"""
+notes = """
+`HTTPProxyAuth` subclasses `HTTPBasicAuth`, not `AuthBase` directly; whether an indirect subclass counts is a reading of the question, so it is in neither list. `_basic_auth_str` is the helper `HTTPBasicAuth.__call__` uses; it shows up in any answer that returns class bodies rather than the class list."""
+
+[target]
+ecosystem = "pypi"
+package = "requests"
+version = "2.34.2"
+root = "${PY_SITE}/requests"
+
+[probe]
+name = "AuthBase"
+symbol = "requests.auth.AuthBase"
+query = "AuthBase"
+kind = "class"
+
+[truth]
+mode = "symbol_set"
+all_of = ["HTTPBasicAuth", "HTTPDigestAuth"]
+none_of = ["_basic_auth_str"]
+
+[budget]
+max_tool_calls = 3
+token_budget = 4000

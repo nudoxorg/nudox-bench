@@ -1,0 +1,40 @@
+# Ground truth derived mechanically, then read. Every `pub fn` signature at
+# impl indentation in src/map.rs of hashbrown-0.15.5 and hashbrown-0.16.1 was
+# extracted and diffed. Four methods are new on `HashMap` itself, all inside
+# `impl<K, V, S, A> HashMap<K, V, S, A>` (hashbrown-0.16.1/src/map.rs:1070):
+#   get_disjoint_mut                       :1533
+#   get_disjoint_unchecked_mut             :1603
+#   get_disjoint_key_value_mut             :1681
+#   get_disjoint_key_value_unchecked_mut   :1755
+# `get_many_mut` still exists in 0.16.1 but gains #[deprecated] (:1542), and
+# `insert_with_key` is new on an entry type, not on HashMap — both are real
+# changes to the package and are scored neither way.
+# `get_key_value_mut` (0.15.5 :1383, 0.16.1 :1380) and `try_insert`
+# (:1915 / :1966) have identical signatures in both versions.
+id = "rust/hashbrown/diff-0.15.5-to-0.16.1"
+family = "retrieval"
+task = "diff"
+question = """
+Which public methods does hashbrown 0.16.1 add to `HashMap` itself that 0.15.5 did not have?"""
+notes = """
+The four additions are the `get_many_*` family renamed to `get_disjoint_*`; the old names survive as deprecated aliases. A tool that diffs by name sees four additions and no removals; one that diffs attributes also sees a deprecation. Both readings pass, because the deprecated aliases are in neither list. Word boundaries keep `get_key_value_mut` from matching inside `get_disjoint_key_value_mut`."""
+
+[target]
+ecosystem = "crates.io"
+package = "hashbrown"
+version = "0.15.5"
+to_version = "0.16.1"
+root = "${CARGO_SRC}/hashbrown-0.16.1"
+
+[probe]
+query = "HashMap"
+name = "HashMap"
+
+[truth]
+mode = "symbol_set"
+all_of = ["get_disjoint_mut", "get_disjoint_unchecked_mut", "get_disjoint_key_value_mut", "get_disjoint_key_value_unchecked_mut"]
+none_of = ["get_key_value_mut", "try_insert"]
+
+[budget]
+max_tool_calls = 3
+token_budget = 8000

@@ -1,0 +1,35 @@
+# Ground truth derived mechanically, then read. Every `pub fn` signature at
+# impl indentation in src/lib.rs of bit-set-0.5.3 and bit-set-0.8.0 was
+# extracted and diffed: two additions, no removals, no changed signatures.
+# Both are inside `impl<B: BitBlock> BitSet<B>` (bit-set-0.8.0/src/lib.rs:251):
+#   get_mut   :375  -> &mut BitVec<B>
+#   truncate  :869
+# `get_ref` (0.5.3 :348, 0.8.0 :350) and `into_bit_vec` (:330 / :332) are the
+# neighbours of `get_mut` and are unchanged.
+id = "rust/bit-set/diff-0.5.3-to-0.8.0"
+family = "retrieval"
+task = "diff"
+question = """
+Which public methods does bit-set 0.8.0 add to `BitSet` compared with 0.5.3?"""
+notes = """
+`get_mut` sits directly after `get_ref` and `into_bit_vec`, its unchanged accessor siblings, so a diff that reports a window of declarations rather than the change itself will name them. Between these versions bit-set also moved from bit-vec 0.6 to 0.8, which changes no signature in bit-set's own source."""
+
+[target]
+ecosystem = "crates.io"
+package = "bit-set"
+version = "0.5.3"
+to_version = "0.8.0"
+root = "${CARGO_SRC}/bit-set-0.8.0"
+
+[probe]
+query = "BitSet"
+name = "BitSet"
+
+[truth]
+mode = "symbol_set"
+all_of = ["get_mut", "truncate"]
+none_of = ["get_ref", "into_bit_vec"]
+
+[budget]
+max_tool_calls = 3
+token_budget = 4000

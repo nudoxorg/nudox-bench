@@ -1,0 +1,37 @@
+# Ground truth derived by reading bit-set-0.8.0 directly. `BitSet::other_op`
+# is the private helper at src/lib.rs:380-410. Its body calls:
+#   BitVec::len         :388, :389   (bit-vec crate)
+#   BitVec::grow        :393         (bit-vec crate)
+#   match_words         :398         (this crate, declared at :91)
+#   BitVec::storage     :404         (bit-vec crate)
+#   BitVec::storage_mut :407         (bit-vec crate, `unsafe`)
+# plus the closure argument `f`. It is *called by* union_with (:626),
+# intersect_with (:649), difference_with and symmetric_difference_with.
+id = "rust/bit-set/outbound-other-op"
+family = "retrieval"
+task = "outbound"
+question = """
+What does `BitSet::other_op` in bit-set 0.8.0 call?"""
+notes = """
+Two things make this hard. Four of the five callees live in a different crate (bit-vec), so an index of bit-set alone can resolve `match_words` but must leave the BitVec methods as unresolved names or follow the dependency. And the obvious neighbours in the source are `other_op`'s callers — `union_with` and `intersect_with` are one-line wrappers around it — so an answer that confuses direction names them. `len` and `storage` are omitted from `all_of` because as bare words they appear in ordinary prose."""
+
+[target]
+ecosystem = "crates.io"
+package = "bit-set"
+version = "0.8.0"
+root = "${CARGO_SRC}/bit-set-0.8.0"
+
+[probe]
+name = "other_op"
+symbol = "bit_set::BitSet::other_op"
+query = "other_op"
+kind = "method"
+
+[truth]
+mode = "symbol_set"
+all_of = ["grow", "match_words", "storage_mut"]
+none_of = ["union_with", "intersect_with"]
+
+[budget]
+max_tool_calls = 3
+token_budget = 4000

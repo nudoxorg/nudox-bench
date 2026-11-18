@@ -1,0 +1,563 @@
+[
+ {
+  "pr": 716,
+  "eligible": 334,
+  "measured": 137,
+  "dependents": 974,
+  "dependents_nontest": 469,
+  "measured_names": [
+   "ArgumentKind",
+   "CSharpAuthorityError",
+   "CSharpOracle",
+   "CompilerAuthorityDiagnosticFacts",
+   "CompilerDiagnosticFacts",
+   "ConditionalSurface",
+   "ContinuationCursor",
+   "GRAMMARS",
+   "ImportBinding",
+   "MAX_REBUILD_BYTES",
+   "OutlineDto",
+   "PackageCompilerOutcomesUnavailable",
+   "PackageSemanticError",
+   "PendingProgressBody",
+   "PreparedPackageMetadata",
+   "ProductDto",
+   "ProductRecord",
+   "ProductRecordDto",
+   "ProductView",
+   "ProgressProjection",
+   "ProjectPaths",
+   "RecordList",
+   "RecordListDto",
+   "SelectedSymbolId",
+   "SemanticShapeReadRequestWire",
+   "ShelfEntry",
+   "ShelfEntryDto",
+   "SourceCoverageGapCause",
+   "StatusDto",
+   "SummaryOutlineDto",
+   "SummaryProductDto",
+   "SummaryRecordsDto",
+   "SummaryShelfEntryDto",
+   "SurfaceProjection",
+   "SurfaceReply",
+   "TSZ_CHECKER_WORKERS_PER_COMPILER_LANE",
+   "admit_local_compile",
+   "analyze_input",
+   "analyze_source_with_target",
+   "analyze_with_declaration",
+   "answer_paged",
+   "apply_charge",
+   "authority_diagnostic_facts_are_valid",
+   "call_routed_tool",
+   "canonical_claim_document",
+   "capture_installed_python_paths",
+   "cargo_target_lookup_for_source_path",
+   "catalog_page_answer",
+   "commit_prepared_builtin_intent",
+   "compiler_outcome_rows",
+   "conditional_index_progress",
+   "degrade_with_diagnostic",
+   "delta_header",
+   "detail_for_package_cause",
+   "discovered_package",
+   "encode_answer_with_call",
+   "execute_admitted",
+   "execute_or_defer_from",
+   "execute_plan_with_recovery",
+   "execute_references",
+   "execute_semantic_graph",
+   "execute_with_output_admission",
+   "finish_add",
+   "finish_admitted_bytes",
+   "from_checked_with_registry",
+   "from_rust_source_scope_failure",
+   "import_target",
+   "index_job_tool",
+   "index_operation_view",
+   "index_progress_output_schema",
+   "index_progress_tool",
+   "index_project_intent_at_with_cluster",
+   "index_project_intent_at_with_cluster_and_intent",
+   "index_project_intent_with_cluster_and_intent",
+   "intern_native_tsz_type",
+   "into_tool_result_for_invocation",
+   "is_external_placeholder",
+   "is_typescript",
+   "issue_cursor",
+   "lower_with_opener",
+   "native_tsz_member_symbol",
+   "normalize_package_profile_path",
+   "outline_tool",
+   "outline_with_output_admission",
+   "package_authority_terminal",
+   "package_cause_is_valid",
+   "package_failure_from_terminal",
+   "persisted_from_store_manifest",
+   "prepare_index_project",
+   "prepare_index_project_at",
+   "prepare_scan_source",
+   "prepare_source_scan",
+   "prepare_staged_package",
+   "prepare_terminal_profile_partition_for_snapshot",
+   "probe_members",
+   "probe_relation_rows",
+   "product_view_for_command",
+   "project_paths_with_policy",
+   "publish_staged_package",
+   "push_shelf_entry",
+   "read_before",
+   "read_current_project_coverage",
+   "read_operation_with_clock",
+   "read_summary_length",
+   "record_tool_calls",
+   "records_tool",
+   "registry_view",
+   "remove_project_intent",
+   "rendered_admitted",
+   "resolve_module",
+   "restore_snapshot_certificate",
+   "restore_typescript_snapshot_certificate",
+   "scan_project_with_configuration_policy_attempt",
+   "semantic_result",
+   "serialize_job",
+   "set_aside_workspace_state",
+   "source_from",
+   "sql_projection",
+   "stage_package_sources_attempt",
+   "start_replacing_state_from_another_build",
+   "surface_graph_result",
+   "surface_reply_result_with_compact_receipt",
+   "surface_reply_with_profile_progress",
+   "typescript_snapshot_reuse",
+   "valid_direct_cursor_owner",
+   "validate_typescript",
+   "verified_local_excerpt",
+   "verify_cursor_token",
+   "wait_operation_with_profiles",
+   "with_browse_completions",
+   "with_invocation_context",
+   "with_python_configuration",
+   "with_python_failure",
+   "with_rust_source_scope_failure",
+   "with_typescript_admission",
+   "with_typescript_cause",
+   "with_typescript_failure"
+  ],
+  "top": [
+   [
+    "SurfaceReply",
+    496
+   ],
+   [
+    "ProductView",
+    50
+   ],
+   [
+    "ProductRecord",
+    46
+   ],
+   [
+    "PackageSemanticError",
+    44
+   ],
+   [
+    "RecordList",
+    44
+   ]
+  ]
+ },
+ {
+  "pr": 700,
+  "eligible": 0,
+  "measured": 0,
+  "dependents": 0,
+  "dependents_nontest": 0,
+  "measured_names": [],
+  "top": []
+ },
+ {
+  "pr": 695,
+  "eligible": 1,
+  "measured": 0,
+  "dependents": 0,
+  "dependents_nontest": 0,
+  "measured_names": [],
+  "top": []
+ },
+ {
+  "pr": 694,
+  "eligible": 3,
+  "measured": 2,
+  "dependents": 6,
+  "dependents_nontest": 3,
+  "measured_names": [
+   "bundle_gui_libraries",
+   "elf_info"
+  ],
+  "top": [
+   [
+    "elf_info",
+    10
+   ],
+   [
+    "bundle_gui_libraries",
+    3
+   ]
+  ]
+ },
+ {
+  "pr": 693,
+  "eligible": 1,
+  "measured": 1,
+  "dependents": 2,
+  "dependents_nontest": 1,
+  "measured_names": [
+   "bundle_gui_libraries"
+  ],
+  "top": [
+   [
+    "bundle_gui_libraries",
+    3
+   ]
+  ]
+ },
+ {
+  "pr": 692,
+  "eligible": 4,
+  "measured": 2,
+  "dependents": 4,
+  "dependents_nontest": 0,
+  "measured_names": [
+   "require_published_source_tag",
+   "write_build_manifest"
+  ],
+  "top": [
+   [
+    "require_published_source_tag",
+    10
+   ],
+   [
+    "write_build_manifest",
+    3
+   ]
+  ]
+ },
+ {
+  "pr": 691,
+  "eligible": 3,
+  "measured": 1,
+  "dependents": 10,
+  "dependents_nontest": 2,
+  "measured_names": [
+   "check_fast"
+  ],
+  "top": [
+   [
+    "check_fast",
+    12
+   ]
+  ]
+ },
+ {
+  "pr": 690,
+  "eligible": 0,
+  "measured": 0,
+  "dependents": 0,
+  "dependents_nontest": 0,
+  "measured_names": [],
+  "top": []
+ },
+ {
+  "pr": 688,
+  "eligible": 1,
+  "measured": 0,
+  "dependents": 0,
+  "dependents_nontest": 0,
+  "measured_names": [],
+  "top": []
+ },
+ {
+  "pr": 687,
+  "eligible": 2,
+  "measured": 2,
+  "dependents": 5,
+  "dependents_nontest": 3,
+  "measured_names": [
+   "_emit_continuation_page",
+   "continuation_report_references"
+  ],
+  "top": [
+   [
+    "_emit_continuation_page",
+    5
+   ],
+   [
+    "continuation_report_references",
+    2
+   ]
+  ]
+ },
+ {
+  "pr": 686,
+  "eligible": 3,
+  "measured": 1,
+  "dependents": 7,
+  "dependents_nontest": 2,
+  "measured_names": [
+   "checkpoint_shell"
+  ],
+  "top": [
+   [
+    "checkpoint_shell",
+    7
+   ]
+  ]
+ },
+ {
+  "pr": 685,
+  "eligible": 2,
+  "measured": 2,
+  "dependents": 5,
+  "dependents_nontest": 1,
+  "measured_names": [
+   "compare_cases",
+   "record_result"
+  ],
+  "top": [
+   [
+    "compare_cases",
+    6
+   ],
+   [
+    "record_result",
+    1
+   ]
+  ]
+ },
+ {
+  "pr": 684,
+  "eligible": 9,
+  "measured": 4,
+  "dependents": 11,
+  "dependents_nontest": 5,
+  "measured_names": [
+   "call_tool",
+   "help_output",
+   "open_the_window",
+   "with_invocation_context"
+  ],
+  "top": [
+   [
+    "help_output",
+    5
+   ],
+   [
+    "with_invocation_context",
+    4
+   ],
+   [
+    "call_tool",
+    1
+   ],
+   [
+    "open_the_window",
+    1
+   ]
+  ]
+ },
+ {
+  "pr": 683,
+  "eligible": 0,
+  "measured": 0,
+  "dependents": 0,
+  "dependents_nontest": 0,
+  "measured_names": [],
+  "top": []
+ },
+ {
+  "pr": 682,
+  "eligible": 0,
+  "measured": 0,
+  "dependents": 0,
+  "dependents_nontest": 0,
+  "measured_names": [],
+  "top": []
+ },
+ {
+  "pr": 680,
+  "eligible": 0,
+  "measured": 0,
+  "dependents": 0,
+  "dependents_nontest": 0,
+  "measured_names": [],
+  "top": []
+ },
+ {
+  "pr": 677,
+  "eligible": 0,
+  "measured": 0,
+  "dependents": 0,
+  "dependents_nontest": 0,
+  "measured_names": [],
+  "top": []
+ },
+ {
+  "pr": 673,
+  "eligible": 2,
+  "measured": 1,
+  "dependents": 0,
+  "dependents_nontest": 0,
+  "measured_names": [
+   "fold_unambiguous_layout_newlines"
+  ],
+  "top": [
+   [
+    "fold_unambiguous_layout_newlines",
+    1
+   ]
+  ]
+ },
+ {
+  "pr": 671,
+  "eligible": 4,
+  "measured": 1,
+  "dependents": 5,
+  "dependents_nontest": 1,
+  "measured_names": [
+   "_locald_process_diagnostic"
+  ],
+  "top": [
+   [
+    "_locald_process_diagnostic",
+    7
+   ]
+  ]
+ },
+ {
+  "pr": 670,
+  "eligible": 125,
+  "measured": 95,
+  "dependents": 1132,
+  "dependents_nontest": 545,
+  "measured_names": [
+   "AdmittedCapturePublication",
+   "CommandWire",
+   "CompletedCaptureChanges",
+   "FactFault",
+   "GRAMMARS",
+   "IndexScanWork",
+   "LineageSearchIndex",
+   "MAX_SCAN_WORKERS",
+   "PROJECT_TREE_SCHEMA",
+   "PackageProjectionAdmissionFaultFacts",
+   "PageRequest",
+   "PreparedScanCompilation",
+   "PreparedScanProfiles",
+   "ProjectTree",
+   "ProjectTreeObservationV1",
+   "ProjectTreeRequestBindingV1",
+   "ProjectionAdmissionFault",
+   "ProjectionAdmissionFaultWire",
+   "ProjectionSpan",
+   "PublicationWork",
+   "SEARCH_PROJECTION_SCHEMA",
+   "SearchDocumentText",
+   "SourceCompilePlan",
+   "SurfaceCommand",
+   "TextSearchIndex",
+   "TreeReading",
+   "TreeSource",
+   "admit_projection_page",
+   "admit_reply_shape",
+   "admit_surface_reply",
+   "answers_while_indexing",
+   "best_evidence_for_lineage",
+   "browse_entry_retained_bytes",
+   "build_controlled",
+   "capture_index_scan",
+   "command_from_wire",
+   "command_from_wire_against_owner",
+   "command_to_wire",
+   "compile_cluster",
+   "completed_capture_changes_for_snapshot",
+   "computed_fault",
+   "connect_matched_owner",
+   "contains_substring",
+   "continue_call",
+   "decode_portable_body",
+   "default_workspace_path",
+   "detail_for_package_cause",
+   "discovery_search_text",
+   "encode_command_body",
+   "execute_admitted",
+   "execute_from",
+   "execute_or_defer_from",
+   "facet_from_counts",
+   "finish_index_scan",
+   "finish_owner_connection",
+   "from_transport",
+   "index_search_snapshot",
+   "intern_native_tsz_type",
+   "lower_with_opener",
+   "member_groups",
+   "native_tsz_member_symbol",
+   "outline_tool",
+   "page_filtered_in_group_prepared",
+   "page_from_document_with_graph_relations",
+   "page_request_from_wire_against_catalog_owner",
+   "page_request_to_wire",
+   "pass_declared_member_ownership",
+   "pass_native_tsz_occurrences",
+   "portable_admission",
+   "prepare_deferred_compile",
+   "prepare_scan_source",
+   "prepare_source_scan",
+   "prove_session_outline",
+   "read_tree",
+   "refresh_lineage",
+   "remove_document",
+   "reopen_pinned_connection",
+   "retain_portable_query",
+   "run_index_scan",
+   "run_mcp_interactive",
+   "scan_project_for_unproven_authorities_cancellable_with_interpreter",
+   "scan_project_with_configuration_policy",
+   "scan_project_with_configuration_policy_attempt",
+   "scan_source_paths",
+   "search_groups_after",
+   "select_head",
+   "selected_claim",
+   "semantic_input_digest",
+   "spawn_index_scan",
+   "stage_package_sources_attempt",
+   "take_json",
+   "token_facet_lineages",
+   "tree_view",
+   "valid_direct_cursor_owner",
+   "verify_checkout"
+  ],
+  "top": [
+   [
+    "SurfaceCommand",
+    501
+   ],
+   [
+    "FactFault",
+    146
+   ],
+   [
+    "PageRequest",
+    80
+   ],
+   [
+    "ProjectTree",
+    73
+   ],
+   [
+    "ProjectTreeRequestBindingV1",
+    71
+   ]
+  ]
+ }
+]

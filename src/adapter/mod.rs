@@ -16,7 +16,9 @@
 //! question, and each system answers it the way that system is actually used.
 
 pub mod canonical;
+pub mod mcp_stdio;
 pub mod nudox;
+pub mod nudox_v2;
 pub mod ripgrep;
 pub mod rust_analyzer;
 

@@ -6,6 +6,8 @@ use anyhow::{Context, Result};
 
 use crate::adapter::nudox::NudoxAdapter;
 use crate::adapter::canonical::CanonicalAdapter;
+use crate::adapter::mcp_stdio::{McpStdioAdapter, McpStdioSettings, Profile};
+use crate::adapter::nudox_v2::{NudoxV2Adapter, NudoxV2Settings};
 use crate::adapter::ripgrep::RipgrepAdapter;
 use crate::adapter::rust_analyzer::RustAnalyzerAdapter;
 use crate::adapter::Adapter;
@@ -81,12 +83,62 @@ pub async fn build_adapters(
             AdapterConfig::RustAnalyzer => {
                 adapters.push(Box::new(RustAnalyzerAdapter::new(keep_responses)));
             }
-            AdapterConfig::McpStdio { name, .. } => {
-                anyhow::bail!(
-                    "adapter `{name}`: the generic stdio MCP adapter is declared but not \
-                     wired yet — the first comparison set is Nudox against the tools an \
-                     agent already has"
-                );
+            AdapterConfig::NudoxV2 {
+                binary,
+                locald,
+                workspace,
+                limit,
+                index_timeout_secs,
+                request_timeout_secs,
+            } => {
+                let defaults = NudoxV2Settings::default();
+                let settings = NudoxV2Settings {
+                    binary: binary
+                        .clone()
+                        .or_else(|| std::env::var("NUDOX_MCP_BIN").ok())
+                        .map(|b| crate::scenario::expand_path(&b).into()),
+                    locald: locald.as_deref().map(|l| crate::scenario::expand_path(l).into()),
+                    workspace: workspace.as_deref().map(|w| crate::scenario::expand_path(w).into()),
+                    limit: limit.unwrap_or(defaults.limit),
+                    index_timeout: index_timeout_secs
+                        .map(std::time::Duration::from_secs)
+                        .unwrap_or(defaults.index_timeout),
+                    request_timeout: request_timeout_secs
+                        .map(std::time::Duration::from_secs)
+                        .unwrap_or(defaults.request_timeout),
+                };
+                adapters.push(Box::new(NudoxV2Adapter::new(settings, keep_responses).await));
+            }
+            AdapterConfig::McpStdio {
+                name,
+                profile,
+                command,
+                args,
+                env,
+                cwd,
+                index_command,
+                copy_root,
+                index_timeout_secs,
+                request_timeout_secs,
+            } => {
+                let settings = McpStdioSettings {
+                    name: name.clone(),
+                    profile: Profile::by_name(profile)?,
+                    command: crate::scenario::expand_path(command),
+                    args: args.clone(),
+                    env: env.clone(),
+                    cwd: cwd.clone(),
+                    index_command: index_command
+                        .iter()
+                        .map(|part| crate::scenario::expand_path(part))
+                        .collect(),
+                    copy_root: *copy_root,
+                    index_timeout: std::time::Duration::from_secs(index_timeout_secs.unwrap_or(600)),
+                    request_timeout: std::time::Duration::from_secs(
+                        request_timeout_secs.unwrap_or(120),
+                    ),
+                };
+                adapters.push(Box::new(McpStdioAdapter::new(settings, keep_responses).await));
             }
         }
     }
