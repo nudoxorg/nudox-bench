@@ -140,6 +140,7 @@ src/adapter/                       nudox_v2 (Backend v2), mcp_stdio (third-party
                                    canonical are legacy
 src/judge.rs                       3-model panel, implementation scenarios only
 src/report.rs                      aggregation and the Markdown report
+scripts/pr_symbols.py, pr_reach.py lines against symbols changed per merged PR
 ```
 
 ## Adding a scenario
@@ -185,6 +186,12 @@ Nudox answered in **785 tokens per question against ripgrep's 9,853**, with a
 resolution gap of zero — and passed 3 of 5 to ripgrep's 4 (on the four Rust
 scenarios alone, both pass 3 of 4). *Same answers, a fraction of the context*
 is supported by that run. *More correct answers* is not.
+
+A side study in [`results/2026-11-18-pr-symbols/`](results/2026-11-18-pr-symbols)
+checks the "review symbols, not lines" pitch on Backend's last 20 merged PRs:
+about one symbol per 11 changed code lines, so it holds below about 1,000
+lines and breaks on the two PRs over 10,000 lines, which touched 475 and
+1,374 symbols.
 
 ## Status
 
